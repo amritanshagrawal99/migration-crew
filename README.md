@@ -70,6 +70,11 @@ The crew's working style is visible in [`runs/published/crew`](runs/published/cr
 - **Deep review.** The reviewer ran its own edge-case probes. It also noticed that a Teradata `GROUP BY` compares
   case-insensitively too, which no trap tests.
 
+One thing the agents got right that I didn't: my first hidden reference used DuckDB's `round_even()`. On DuckDB
+1.5 that goes through a double, so 1164.65 rounds to 1164.7 instead of 1164.6, and CI on Python 3.10 caught the
+mismatch. Both agents had written the rounding in exact integer arithmetic, so their conversions pass on DuckDB 1.5
+and 2.0 alike. The reference now does the same.
+
 The interesting question is where that changes: an estate too big for one context window, where isolating each script
 in its own agent should start to pay off. That experiment is the next step ([#1](../../issues/1)).
 
