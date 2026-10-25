@@ -52,6 +52,8 @@ the downstream scripts fail with them. A test checks this.
 
 ## Results: crew vs one agent
 
+### 9 scripts
+
 Same model (Claude Opus 5.5, effort medium), same tools, same budget:
 
 | Mode | Unseen dataset B | Overfit | Report claims correct | Review | Tool calls | Time | Estimated cost |
@@ -75,8 +77,58 @@ One thing the agents got right that I didn't: my first hidden reference used Duc
 mismatch. Both agents had written the rounding in exact integer arithmetic, so their conversions pass on DuckDB 1.5
 and 2.0 alike. The reference now does the same.
 
-The interesting question is where that changes: an estate too big for one context window, where isolating each script
-in its own agent should start to pay off. That experiment is the next step ([#1](../../issues/1)).
+### 48 scripts
+
+Does the crew start to pay off once the estate is bigger? `migration-crew generate` builds estates from
+templates, one family per kind of legacy job:
+- filters, IN lists and padded joins with case-varying literals;
+- half-even rounding casts and `TOP n WITH TIES`;
+- `ZEROIFNULL`;
+- integer division, NULL ordering and date arithmetic as control families, which the auto-converter already gets
+  right;
+- dependent jobs that read earlier outputs.
+
+Each template writes the Teradata script and its hidden DuckDB reference together, so every pair is correct by
+construction. On the 48-script estate (seed 7), the reference passes both datasets, and the auto-converter passes
+only the 3 control scripts. A test checks the same on a generated estate.
+
+| Mode | Unseen B, DuckDB 2.0 | Unseen B, DuckDB 1.5.6 | Tool calls | Time | Estimated cost |
+|---|---|---|---|---|---|
+| **crew** | **48 / 48** | **48 / 48** | 740 (48 converter + 25 reviewer delegations) | 1018 s | $11.39 |
+| **solo** | **48 / 48** | **40 / 48** | 216 | 268 s | $1.32 |
+
+**On the engine the agents tested against, there is still no difference.** Both modes pass all 48 on unseen data:
+one agent saw every script, learned each trap once and applied it everywhere. The crew took 3.8× the time and 8.6×
+the cost.
+
+**The difference shows up on a second engine version.** For half-even rounding, the solo agent wrote
+`round_even(x, 1)`.
+- That is exact on DuckDB 2.0, which is what the agents ran on.
+- On DuckDB 1.5 it goes through a double, so halfway values round the wrong way (1164.65 becomes 1164.7, not
+  1164.6). 13 conversions fail on at least one dataset: 12 on A and 8 on unseen B.
+
+The crew's first rounding converter (`g05`) wrote exact integer arithmetic instead, and recorded why: "round_even
+on DECIMAL goes through a double". The lead then put that pattern into every later brief, and reviewers checked
+for it. That is the crew's real advantage: one agent's finding becomes a rule that every later conversion and
+review applies. Its notes also record assumptions a migration lead needs, such as "assumes amount has scale 2".
+
+Two caveats:
+- This is one run per mode, and in the 9-script run the solo agent did write exact rounding.
+- Parity proven on one engine version is not parity on another. Grades now record the DuckDB version, and CI
+  re-grades the published 9-script runs on DuckDB 1.5 (Python 3.10) and 2.x.
+
+**The crew's first attempt failed for an infrastructure reason** ([`crew-first-attempt`](runs/published/n48/crew-first-attempt)).
+1. The lead delegated 10 converters in one message.
+2. The CLI rejected the ones over the concurrency cap of 4 ("do not retry").
+3. The lead then ended its turn while the other converters were still working.
+4. With a required structured report, ending the turn ended the run: 8 of 48 converted, 40 never started.
+
+The fix is a prompt rule: delegate in waves of at most 4 and keep going while scripts remain. Each finished wave
+re-invokes the lead. A crew needs its own scheduling discipline, which one agent working through a list never
+does.
+
+Runs: [`runs/published/n48`](runs/published/n48). To reproduce the estate and re-grade a run:
+`migration-crew generate --scripts 48 --out estates/n48`, then `migration-crew grade runs/published/n48/crew`.
 
 ## Design
 
@@ -104,6 +156,8 @@ pip install git+https://github.com/amritanshagrawal99/migration-crew
 migration-crew run --mode crew        # or --mode solo; then grades on both datasets
 migration-crew grade runs/<workspace> # re-grade a finished run
 migration-crew tool runs/x reconcile '{"script": "s5_order_lines_enriched"}'   # any tool, no model
+migration-crew generate --scripts 48 --out estates/n48   # a bigger estate from templates (datasets + hidden reference)
+migration-crew run --mode solo --estate estates/n48 --budget 40
 ```
 
 Authenticate the Agent SDK with an `ANTHROPIC_API_KEY`, or with `CLAUDE_CODE_OAUTH_TOKEN` from `claude setup-token`.
@@ -119,6 +173,8 @@ Authenticate the Agent SDK with an `ANTHROPIC_API_KEY`, or with `CLAUDE_CODE_OAU
 - The SQL sandbox holds against ATTACH, file reads and COPY.
 - The query tools are read-only and scoped.
 - Grading data never appears inside the estate.
+- A generated estate is sound: the reference passes both datasets, and auto-conversion fails exactly the trap scripts.
+- The published runs still grade as reported on this machine's DuckDB.
 
 ## License
 

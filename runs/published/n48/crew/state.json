@@ -1,0 +1,870 @@
+{
+  "g01_seg_filter": {
+    "attempts": 1,
+    "reconciles": 2,
+    "status": "passing",
+    "review": "approved",
+    "notes": [
+      {
+        "kind": "trap",
+        "text": "Session mode: segment = 'silver' is NOT CASESPECIFIC and ignores trailing spaces. Converted to lower(rtrim(segment,' ')) = lower(rtrim('silver',' ')). The plain DuckDB '=' would drop rows whose values differ only in case or trailing spaces."
+      },
+      {
+        "kind": "decision",
+        "text": "Teradata TRIM(cust_code) removes only leading and trailing spaces, so it is written as TRIM(cust_code, ' ') to match exactly. The case of cust_code is kept as it is, as in legacy. MULTISET and PRIMARY INDEX were dropped."
+      },
+      {
+        "kind": "review:approved",
+        "text": "Matches the legacy logic and applies session-mode semantics as general rules. The segment filter compares case-insensitively and ignores trailing spaces on both sides: lower(rtrim(x,' ')) is applied to both the column and the literal. Leading spaces are still significant, which matches Teradata. The filter value 'silver' comes from the legacy SQL, not from the data. No spellings are enumerated. TRIM(cust_code, ' ') strips only spaces from both ends, like Teradata TRIM. No rounding, division, ordering or TOP is involved. Checked on dataset A: the source has 'silver', 'Silver' and 'SILVER ' (22+44+33=99 rows), the legacy output has 99 rows, NULL and '' segments are correctly excluded. Minor residual risk: lower() and Teradata's case folding may differ for non-ASCII characters. This is not a concern for this column."
+      }
+    ]
+  },
+  "g02_status_counts": {
+    "attempts": 1,
+    "reconciles": 2,
+    "status": "passing",
+    "review": "approved",
+    "notes": [
+      {
+        "kind": "trap",
+        "text": "Teradata session mode compares strings NOT CASESPECIFIC and ignores trailing spaces. The test status IN ('pending','Shipped') is rewritten as lower(rtrim(status)) IN (lower(rtrim(literal)), ...) so that case and padding variants are matched the same way on any data. A NULL status still counts as a non-match (0), which is what the legacy job does."
+      },
+      {
+        "kind": "review:approved",
+        "text": "Matches the legacy logic, and the Teradata session-mode rules are applied as general rules. The IN-list comparison uses lower(rtrim(...)) on both the column and every literal, so it ignores case and trailing spaces for any value, not just the variants in dataset A (Shipped, SHIPPED , shipped, Pending , pending). The literals 'pending' and 'Shipped' come from the legacy SQL, not from the data. NULL status falls to ELSE 0, the same as Teradata. COUNT(*) and GROUP BY cust_id are unchanged. cust_id is a numeric key, so no string-join semantics are involved. The script has no rounding, division, ordering or TOP. Leading spaces stay significant, which also matches Teradata. Minor point, no change needed: lower() folds case for non-ASCII characters slightly differently from Teradata's case-insensitive collation. That only matters if status values contain non-ASCII letters."
+      }
+    ]
+  },
+  "g03_channel_revenue": {
+    "attempts": 1,
+    "reconciles": 2,
+    "status": "passing",
+    "review": "approved",
+    "notes": [
+      {
+        "kind": "trap",
+        "text": "Session-mode string comparison (NOT CASESPECIFIC, trailing spaces ignored): channel = 'WEB' rewritten as lower(rtrim(channel,' ')) = lower(rtrim('WEB',' ')); source channel values vary in case and carry trailing spaces. Leading spaces still significant (only rtrim)."
+      },
+      {
+        "kind": "review:approved",
+        "text": "The conversion matches legacy semantics as general rules. The only string comparison (channel = 'WEB') uses lower(rtrim(x,' ')) on both sides. That makes it case-insensitive and ignores trailing spaces while keeping leading spaces significant, which is right for NOT CASESPECIFIC session mode. It covers every variant in the source ('WEB', 'web', 'Web  ') without listing any of them. 'WEB' is the literal from the legacy SQL, not a value taken from the data. There is no rounding, division, ordering, TOP or NULL handling to check. SUM over DECIMAL(12,2) stays exact decimal and COUNT(*) is unchanged. The output has no ORDER BY, so it does not depend on row order. Optional: say in a comment that grouping on cust_id assumes a numeric key. If cust_id were ever a character column, GROUP BY would also need the case- and trailing-space-insensitive rule."
+      }
+    ]
+  },
+  "g04_category_lines": {
+    "attempts": 1,
+    "reconciles": 2,
+    "status": "passing",
+    "review": "approved",
+    "notes": [
+      {
+        "kind": "trap",
+        "text": "Session mode: character comparisons are NOT CASESPECIFIC and ignore trailing spaces. The CHAR(10) sku join key and the category = 'garden' filter both use lower(rtrim(..)) on each side, so padded or mixed-case values still match the way they do in Teradata."
+      },
+      {
+        "kind": "review:approved",
+        "text": "Matches the legacy logic. Session-mode string semantics are applied as general rules to every string comparison in the script: the sku join (CHAR(10) vs VARCHAR) and the category filter both use lower(rtrim(...)) on both sides, so they ignore case and trailing spaces. The literal 'garden' comes from the legacy SQL itself, not from the data. On dataset A every category value is already clean lowercase, so the normalisation is not exercised there, but it is correct for other data. qty * unit_price (INTEGER * DECIMAL(12,2)) is an exact decimal product, so no rounding or division is involved. There is no ORDER BY, TOP, QUALIFY or aggregation, so NULL ordering and tie handling do not apply. Join cardinality is the same as legacy (MULTISET, plain inner join). The PRIMARY INDEX only affects physical layout and has no meaning in DuckDB. No changes needed."
+      }
+    ]
+  },
+  "g05_rounding": {
+    "attempts": 2,
+    "reconciles": 3,
+    "status": "passing",
+    "review": "approved",
+    "notes": [
+      {
+        "kind": "trap",
+        "text": "CAST(SUM(amount) AS DECIMAL(14,1)): Teradata (RoundHalfwayMagUp=FALSE) rounds half-to-even; DuckDB CAST rounds half away from zero, and round_even on DECIMAL goes through a double. Implemented exact banker's rounding with integer arithmetic on the scale-2 sum (abs value // 10, remainder test, sign restored), then an exact decimal multiply by 0.1. Works for negative sums too."
+      },
+      {
+        "kind": "review:approved",
+        "text": "Matches the legacy logic: the same filter (order_date >= DATE '2026-04-01', a literal copied from the legacy script, not from the data), GROUP BY cust_id, and CAST(SUM(amount) AS DECIMAL(14,1)) rounded half-to-even as Teradata does with RoundHalfwayMagUp=FALSE. The rounding is done exactly in integer arithmetic on the scale-2 sum. I checked it on edge cases: +/-0.05 -> 0.0, 0.15 -> 0.2, 0.25 -> 0.2, -1.25 -> -1.2, -1.35 -> -1.4, -1.26 -> -1.3, 1.24 -> 1.2, and a NULL sum -> NULL. All are correct, including negatives, where sign and magnitude are handled separately. Source types confirmed: amount DECIMAL(12,2), order_date DATE, cust_id INTEGER. This script has no string comparisons, joins, ordering, TOP or integer division, so those rules do not apply. Nothing is hard-coded from the data. Minor risk, no change needed: the *100 -> HUGEINT step assumes amount has scale 2. If the column's scale ever changes, change the multiplier to 10^scale."
+      },
+      {
+        "kind": "risk",
+        "text": "The exact half-even rounding multiplies SUM(amount) by 100 and converts it to HUGEINT, which assumes amount is DECIMAL(x,2), as it is in the current schema. If the source column's scale changes, the multiplier has to change too, or the HUGEINT conversion will round too early."
+      }
+    ]
+  },
+  "g06_topk": {
+    "attempts": 1,
+    "reconciles": 2,
+    "status": "passing",
+    "review": "approved",
+    "notes": [
+      {
+        "kind": "trap",
+        "text": "TOP 5 WITH TIES returns every row tied with the 5th row, so it can return more than 5 rows (28 on dataset A, where all 28 have count 8). Implemented as RANK() OVER (ORDER BY metric DESC NULLS LAST) <= 5 with Teradata's null ordering made explicit. metric is COUNT(*), so it is never NULL. cust_id is an INTEGER, so the session-mode string comparison rules do not apply to the GROUP BY. If cust_id is NULL, those rows form their own group, the same as in Teradata."
+      },
+      {
+        "kind": "review:approved",
+        "text": "Matches the legacy logic. TOP 5 WITH TIES ... ORDER BY metric DESC is implemented as RANK() OVER (ORDER BY metric DESC) <= 5. That keeps every row tied with the 5th row, which is the Teradata rule, and it does not depend on row order. cust_id is an INTEGER (I checked the source), so string case and trailing-space rules do not apply to the GROUP BY. COUNT(*) is never NULL, so NULLS LAST (the Teradata order for DESC) is correct and harmless. If cust_id is NULL on other data, both platforms put those rows in one group. There is no rounding, no division and nothing hard-coded."
+      }
+    ]
+  },
+  "g07_zeroifnull": {
+    "attempts": 1,
+    "reconciles": 2,
+    "status": "passing",
+    "review": "approved",
+    "notes": [
+      {
+        "kind": "trap",
+        "text": "ZEROIFNULL is not a DuckDB function. It is now COALESCE(credit_limit, 0), cast to DECIMAL(12,2) so the output type matches the legacy column. The band test (> 40000) compares numbers, not strings, so the case/trailing-space rule does not apply. The script has no rounding, division or ordering."
+      },
+      {
+        "kind": "review:approved",
+        "text": "ZEROIFNULL(credit_limit) is correctly mapped to COALESCE(credit_limit, 0), in both the output column and the band predicate. The CAST to DECIMAL(12,2) matches the source column type (customers.credit_limit is DECIMAL(12,2)) and the legacy output type, so it never rounds and only pins the result type that COALESCE with an integer literal might otherwise widen. The threshold is a strict > 40000, the same as legacy, so NULLs fall into LOW as they do in Teradata. The script has no string comparisons or joins, no division, no ordering, no TOP and no rounding, so none of the session-mode rules come into play. Nothing is hard-coded from the data: 40000 and the HIGH/LOW labels come from the legacy SQL. The script is general and works on other data."
+      }
+    ]
+  },
+  "g08_ratio": {
+    "attempts": 1,
+    "reconciles": 2,
+    "status": "passing",
+    "review": "approved",
+    "notes": [
+      {
+        "kind": "trap",
+        "text": "Teradata INTEGER / INTEGER is integer division that truncates toward zero. In DuckDB, / gives a DOUBLE and // rounds down (floor), which differs for negative values. Implemented as sign-aware abs(s)//abs(n) with the sign restored, so it is exact and works for negatives. A NULL sum stays NULL. The output is cast to BIGINT to match the legacy output column type."
+      },
+      {
+        "kind": "review:approved",
+        "text": "Matches legacy semantics as general rules. INTEGER/INTEGER is implemented as truncation toward zero using sign-aware abs(s)//abs(n). This is correct for negative sums even though dataset A only has total_items in 1..9. NULL handling: if every total_items in a group is NULL, s is NULL and the result is NULL, as in Teradata. Divide-by-zero cannot happen because COUNT(*) is at least 1 for every group. cust_id is INTEGER, so the GROUP BY needs no case or trailing-space normalisation. There is no ORDER BY, TOP, ROUND or DECIMAL cast, and nothing is hard-coded. Optional nit: Teradata types the result as INTEGER, while the target casts to BIGINT. The values are identical. Cast to INTEGER if you want exact type parity."
+      }
+    ]
+  },
+  "g09_first_null": {
+    "attempts": 1,
+    "reconciles": 2,
+    "status": "passing",
+    "review": "approved",
+    "notes": [
+      {
+        "kind": "trap",
+        "text": "Teradata sorts NULLs lowest, so in ROW_NUMBER() ... ORDER BY ship_date ASC, an order with a NULL ship_date (not yet shipped) comes first. DuckDB's default is NULLS LAST, which would pick the earliest shipped order instead. Made it explicit: ship_date ASC NULLS FIRST, order_id ASC NULLS FIRST. Dataset A has 165 NULL ship_dates, so this changes the result. The keys (cust_id, order_id) are INTEGER, so the case/trailing-space comparison rule does not apply here."
+      },
+      {
+        "kind": "legacy_bug",
+        "text": "The comment says 'First order in fulfilment order', but because NULLs sort lowest, a customer with any unshipped order (NULL ship_date) gets that unshipped order as 'first', not the earliest shipped one. Kept as-is for parity."
+      },
+      {
+        "kind": "review:approved",
+        "text": "Faithful conversion. Teradata sorts NULLs lowest, so ascending ORDER BY means NULLS FIRST. That is applied to both window sort keys (ship_date and the order_id tie-breaker), so it is a general rule and not limited to the data. cust_id and order_id are INTEGER and ship_date is DATE, so no string case or trailing-space rules apply. There is no rounding or division. Nothing is hard-coded. order_id is unique and non-null in the source, so the ROW_NUMBER result does not depend on row order. Note for reference: a customer with any NULL ship_date gets that unshipped order as their 'first ship'. This matches legacy behaviour and is kept for parity."
+      },
+      {
+        "kind": "legacy_bug",
+        "text": "Teradata sorts NULLs lowest, so an order with a NULL ship_date (not yet shipped) ranks first and is reported as the customer's first shipment. 165 of the 968 orders in dataset A have a NULL ship_date. The conversion keeps this behaviour on purpose (NULLS FIRST) for parity."
+      }
+    ]
+  },
+  "g10_recency": {
+    "attempts": 1,
+    "reconciles": 2,
+    "status": "passing",
+    "review": "approved",
+    "notes": [
+      {
+        "kind": "trap",
+        "text": "Teradata DATE - DATE gives an integer day count. DuckDB date - date also gives integer days (BIGINT), which matches the legacy BIGINT column, so the cast is only there to make the type explicit. There are no character comparisons, no rounding and no ORDER BY, so rules 1, 2, 4 and 5 do not apply. The CROSS JOIN with etl_control is kept as in the legacy job: if etl_control has more than one row, it gives one row per (cust_id, run_date), the same as legacy. Customers whose order_date values are all NULL get days_since NULL and lapsed 0 on both platforms."
+      },
+      {
+        "kind": "risk",
+        "text": "The job assumes etl_control has exactly one row. If it has several run_dates, both the legacy job and the migrated job output one row per cust_id per run_date, so cust_id stops being unique. If it is empty, both output no rows. The migrated job does the same as legacy here on purpose."
+      },
+      {
+        "kind": "review:approved",
+        "text": "Faithful 1:1 translation. orders.order_date and etl_control.run_date are DATE, so DuckDB DATE - DATE gives integer days, which matches Teradata. The lapsed threshold (> 60, strict) is the same as in the legacy script. cust_id is INTEGER, so grouping on it involves no case or trailing-space rule. There are no string comparisons, rounding, division, ordering or TOP, and no hard-coded data values. CROSS JOIN with GROUP BY run_date behaves the same as legacy even if etl_control has more than one row. NULL order_date values are ignored by MAX in both engines. Minor point, no change needed: days_since is cast to BIGINT, while Teradata would give INTEGER. The values are identical."
+      }
+    ]
+  },
+  "g11_seg_filter": {
+    "attempts": 1,
+    "reconciles": 2,
+    "status": "passing",
+    "review": "approved",
+    "notes": [
+      {
+        "kind": "trap",
+        "text": "Session-mode string comparison: segment = 'Gold' is NOT CASESPECIFIC and ignores trailing spaces in Teradata. Converted to lower(rtrim(segment,' ')) = lower(rtrim('Gold',' ')); leading spaces still significant. The plain '=' in the auto_convert draft would drop mis-cased/padded rows."
+      },
+      {
+        "kind": "trap",
+        "text": "Teradata TRIM(x) removes only space characters from both ends; DuckDB TRIM(x) with no argument would also trim other whitespace. Used TRIM(cust_code, ' ') to match."
+      },
+      {
+        "kind": "review:approved",
+        "text": "The filter applies Teradata session-mode string comparison as a general rule: lower(rtrim(segment,' ')) = lower(rtrim('Gold',' ')). It ignores case and trailing spaces and keeps leading spaces significant. It does not list values seen in the data. NULL segments are excluded, as in legacy. TRIM(cust_code, ' ') matches Teradata TRIM, which strips leading and trailing spaces. The job has no rounding, division, ordering, TOP or ZEROIFNULL logic. Source segments include GOLD, Gold, 'Gold   ', 'gold ', '' and NULL, and all are handled by the rule. Optional cosmetic change: rtrim on the literal 'Gold' does nothing and could be dropped, but it is harmless."
+      }
+    ]
+  },
+  "g12_rounding": {
+    "attempts": 1,
+    "reconciles": 2,
+    "status": "passing",
+    "review": "approved",
+    "notes": [
+      {
+        "kind": "trap",
+        "text": "CAST(SUM(amount) AS DECIMAL(14,1)): Teradata (RoundHalfwayMagUp=FALSE) rounds half-to-even; DuckDB CAST rounds half away from zero and round_even goes via double. Reused the approved g05 pattern: exact scale-2 sum scaled to HUGEINT, sign/abs split, integer half-even rounding to 1 dp, sign restored, multiplied by exact DECIMAL 0.1 and cast to DECIMAL(14,1). NULL sums stay NULL."
+      },
+      {
+        "kind": "review:approved",
+        "text": "The conversion matches the legacy logic: same filter (order_date >= DATE '2026-01-01', a literal from the legacy script, not from the data), same GROUP BY cust_id, and SUM(amount) cast to DECIMAL(14,1). It rounds half-to-even (RoundHalfwayMagUp=FALSE) using exact integer arithmetic on the scale-2 sum, not DuckDB's double-based round_even or its half-away-from-zero CAST. I checked it on synthetic values. 1.25->1.2, 1.35->1.4, -1.25->-1.2, -1.35->-1.4, 1.26->1.3, -1.24->-1.2, 0.05->0.0, -0.05->0.0 (no negative zero), 0.15->0.2, NULL->NULL. All correct, so negatives and NULLs are handled even though dataset A has neither (amount is DECIMAL(12,2) with 968 non-null values, all positive). The script has no string comparisons, joins, ordering, TOP or integer division, so those rules don't apply. Nothing is hard-coded from the data. Minor risk, no change needed: the *100 -> HUGEINT step assumes amount stays at scale 2. If the column's scale changes, change the multiplier to match."
+      },
+      {
+        "kind": "risk",
+        "text": "The exact half-even rounding scales SUM(amount) by 100 into HUGEINT, which assumes orders.amount is DECIMAL(x,2). If the source column's scale changes, the multiplier must change too, or the HUGEINT cast will round before the half-even step."
+      }
+    ]
+  },
+  "g13_rounding": {
+    "attempts": 1,
+    "reconciles": 2,
+    "status": "passing",
+    "review": "approved",
+    "notes": [
+      {
+        "kind": "trap",
+        "text": "CAST(SUM(amount) AS DECIMAL(14,1)) rounds half-to-even in Teradata (RoundHalfwayMagUp=FALSE). DuckDB's CAST rounds half away from zero, and round_even goes through a double. So the rounding is done exactly in integer arithmetic on the scale-2 sum (sum*100 as HUGEINT), splitting sign and absolute value so negatives round correctly. A NULL sum stays NULL."
+      },
+      {
+        "kind": "review:approved",
+        "text": "Faithful to legacy CAST(SUM(amount) AS DECIMAL(14,1)) under RoundHalfwayMagUp=FALSE. Half-to-even is done in exact integer arithmetic on the scale-2 sum (amount is DECIMAL(12,2) in the schema, so SUM*100 is an exact integer). Negatives: the sign/abs split gives symmetric banker's rounding, which matches Teradata. NULL sums carry through as NULL. The final DECIMAL(37,0)*DECIMAL(2,1) is exact. cust_id is INTEGER, so no case or trailing-space grouping semantics apply. The only literal is the date filter, which comes from the legacy SQL. No values are hard-coded and nothing depends on row order. Residual risk: this relies on amount staying at scale 2. If the column's scale ever increases, the HUGEINT cast would round silently before the half-even step."
+      },
+      {
+        "kind": "risk",
+        "text": "Exact half-even rounding assumes orders.amount is DECIMAL(x,2). The same pattern is in g15_rounding. If the source scale changes, CAST(SUM(amount)*100 AS HUGEINT) rounds half-away before the half-even logic runs."
+      }
+    ]
+  },
+  "g14_seg_filter": {
+    "attempts": 1,
+    "reconciles": 2,
+    "status": "passing",
+    "review": "approved",
+    "notes": [
+      {
+        "kind": "trap",
+        "text": "Session-mode string comparison is not case-specific and ignores trailing spaces: segment = 'gold' becomes lower(rtrim(segment,' ')) = lower(rtrim('gold',' ')). Teradata TRIM(cust_code) trims only spaces, so it becomes TRIM(cust_code, ' ')."
+      },
+      {
+        "kind": "review:approved",
+        "text": "Session-mode string comparison is written as a general rule: lower(rtrim(col,' ')) = lower(rtrim(literal,' ')). It ignores case and trailing spaces and keeps leading spaces significant. It covers every segment variant in the source (GOLD, 'Gold   ', Gold, 'gold '). NULL segments are excluded, which matches Teradata. TRIM(cust_code, ' ') strips spaces only, on both sides, which matches Teradata TRIM. No hard-coded data values. There is no rounding, division, ordering or aggregation in this script."
+      }
+    ]
+  },
+  "g15_rounding": {
+    "attempts": 1,
+    "reconciles": 2,
+    "status": "passing",
+    "review": "approved",
+    "notes": [
+      {
+        "kind": "trap",
+        "text": "CAST(SUM(amount) AS DECIMAL(14,1)): Teradata (RoundHalfwayMagUp=FALSE) rounds half-to-even, but DuckDB's CAST rounds half away from zero and round_even goes through a double. Implemented exact half-even rounding in integer arithmetic on the scale-2 sum (amount is DECIMAL(12,2)), handling the sign separately for negatives. A NULL sum stays NULL. The filter is on DATE only, so no string-comparison semantics apply."
+      },
+      {
+        "kind": "review:approved",
+        "text": "Same logic as g13 with the legacy date filter (2026-03-01). Half-to-even for CAST to DECIMAL(14,1) uses exact integer arithmetic on SUM(DECIMAL(12,2))*100. Negatives are handled symmetrically through sign/abs, NULLs carry through, and the final scaling is exact. The cust_id key is INTEGER, so string semantics don't apply. There are no hard-coded data values and nothing depends on row order. Residual risk: this assumes amount stays at scale 2."
+      }
+    ]
+  },
+  "g16_channel_revenue": {
+    "attempts": 1,
+    "reconciles": 2,
+    "status": "passing",
+    "review": "approved",
+    "notes": [
+      {
+        "kind": "trap",
+        "text": "WHERE channel = 'Web': Teradata session mode compares strings NOT CASESPECIFIC and ignores trailing spaces, so channel values differing only in case or trailing blanks still match. Converted to lower(rtrim(channel,' ')) = lower(rtrim('Web',' ')). Leading spaces still count. cust_id is INTEGER, so grouping needs no normalisation."
+      },
+      {
+        "kind": "review:approved",
+        "text": "The channel filter applies the general session-mode rule lower(rtrim(channel,' ')) = lower(rtrim('Web',' ')). It matches WEB, 'Web  ' and web, and stays strict on leading spaces. SUM(amount) and COUNT(*) per cust_id are unchanged from the legacy SQL. There is no rounding, division or ordering to emulate, and nothing is hard-coded from the data. Minor and not blocking: it uses CREATE TABLE where g14 uses CREATE OR REPLACE TABLE. If the job runner reruns jobs, switch to CREATE OR REPLACE for idempotency."
+      }
+    ]
+  },
+  "g17_seg_filter": {
+    "attempts": 1,
+    "reconciles": 2,
+    "status": "passing",
+    "review": "approved",
+    "notes": [
+      {
+        "kind": "trap",
+        "text": "Session-mode string comparison: segment = 'Silver' is NOT CASESPECIFIC and ignores trailing spaces, so it is converted to lower(rtrim(segment,' ')) = lower(rtrim('Silver',' ')). Teradata TRIM(cust_code) trims spaces only, so it becomes TRIM(cust_code, ' ') (DuckDB's TRIM with no second argument would trim other whitespace too)."
+      },
+      {
+        "kind": "review:approved",
+        "text": "The session-mode string comparison is written as a general rule. lower(rtrim(x,' ')) on both sides ignores case and trailing spaces and keeps leading spaces significant. It handles every variant in the source data ('Silver', 'silver', 'SILVER '). NULL segments are excluded, as in legacy. TRIM(cust_code, ' ') strips only spaces, matching Teradata TRIM. Nothing is hard-coded except the literal 'Silver', which comes from the legacy SQL. No dependence on row order."
+      }
+    ]
+  },
+  "g18_zeroifnull": {
+    "attempts": 1,
+    "reconciles": 2,
+    "status": "passing",
+    "review": "approved",
+    "notes": [
+      {
+        "kind": "trap",
+        "text": "ZEROIFNULL(credit_limit) is not a DuckDB function. Replaced it with COALESCE(credit_limit, 0) and cast the result to DECIMAL(12,2) so the column keeps the legacy type. COALESCE with an integer literal could otherwise widen or change the decimal type. The band test (> 20000) runs on the coalesced value, so NULL limits become 'LOW', which matches the legacy behaviour."
+      },
+      {
+        "kind": "review:approved",
+        "text": "ZEROIFNULL is converted to COALESCE(credit_limit, 0) and cast to DECIMAL(12,2). The source column customers.credit_limit is DECIMAL(12,2), and so is the legacy output column. The cast keeps the legacy type and stops DuckDB from widening it in COALESCE. The band comparison uses the same COALESCE, so a NULL limit becomes 0, which gives 'LOW', as in legacy. Nothing is hard-coded from the data. Minor: the script uses CREATE TABLE where g17 uses CREATE OR REPLACE. Consider making this consistent so reruns are idempotent; it does not affect parity."
+      }
+    ]
+  },
+  "g19_seg_filter": {
+    "attempts": 1,
+    "reconciles": 2,
+    "status": "passing",
+    "review": "approved",
+    "notes": [
+      {
+        "kind": "trap",
+        "text": "Teradata session mode compares strings NOT CASESPECIFIC and ignores trailing spaces. segment = 'GOLD' becomes lower(rtrim(segment,' ')) = lower(rtrim('GOLD',' ')). Teradata TRIM(cust_code) trims only spaces, so it becomes TRIM(cust_code, ' ')."
+      },
+      {
+        "kind": "review:approved",
+        "text": "Session-mode comparison is implemented as a general rule: lower(rtrim(segment,' ')) = lower(rtrim('GOLD',' ')). It ignores case and trailing spaces only, so leading spaces still count, and NULL or empty segments are excluded as they are in Teradata. On dataset A this matches GOLD, Gold, 'Gold   ' and 'gold '. TRIM(cust_code, ' ') strips only spaces from both ends, which matches Teradata TRIM. No values are hard-coded beyond the literal in the legacy SQL."
+      }
+    ]
+  },
+  "g20_rounding": {
+    "attempts": 1,
+    "reconciles": 2,
+    "status": "passing",
+    "review": "approved",
+    "notes": [
+      {
+        "kind": "trap",
+        "text": "CAST(SUM(amount) AS DECIMAL(14,1)): Teradata with RoundHalfwayMagUp=FALSE rounds half-to-even; DuckDB CAST rounds half away from zero and round_even goes through a double. Implemented exact half-even in integer arithmetic on the scale-2 sum (sign/abs split for negatives, NULL propagates). Date filter is a DATE literal on a DATE column, no string comparisons, so no case/trailing-space rules apply."
+      },
+      {
+        "kind": "review:approved",
+        "text": "CAST to DECIMAL(14,1) uses exact half-to-even rounding (RoundHalfwayMagUp=FALSE) with integer arithmetic, so it does not use DuckDB's double-based round_even or its half-away-from-zero CAST. Negatives are handled by splitting sign and magnitude (for example -0.25 becomes -0.2 and -0.35 becomes -0.4). An all-NULL sum stays NULL. The date filter literal comes from the legacy SQL. One assumption to know about: CAST(SUM(amount)*100 AS HUGEINT) is exact only because orders.amount is DECIMAL(12,2), which I confirmed with typeof. If the column's scale ever changes, the multiplier must change too. Optional hardening: add a comment that ties the multiplier to the scale of amount."
+      },
+      {
+        "kind": "risk",
+        "text": "The exact half-even rounding scales SUM(amount) by 100 into a HUGEINT, which assumes orders.amount is DECIMAL(..,2) (true now). If the source scale changes, the multiplier must be updated or the cast will round early."
+      }
+    ]
+  },
+  "g21_channel_revenue": {
+    "attempts": 1,
+    "reconciles": 2,
+    "status": "passing",
+    "review": "approved",
+    "notes": [
+      {
+        "kind": "trap",
+        "text": "The filter channel = 'web' in session mode ignores letter case and trailing spaces, so it also matches values like 'WEB ' and 'Web'. Converted as lower(rtrim(channel,' ')) = lower(rtrim('web',' ')). Leading spaces still count, which is the same as in Teradata."
+      },
+      {
+        "kind": "review:approved",
+        "text": "The channel filter uses lower(rtrim(channel,' ')) = lower(rtrim('web',' ')). That is the general NOT CASESPECIFIC, trailing-space-insensitive comparison, and it keeps leading spaces significant. On dataset A it matches web, WEB and 'Web  ' (316 rows). SUM and COUNT(*) behave the same in both engines, and no values are hard-coded beyond the legacy literal."
+      }
+    ]
+  },
+  "g22_topk": {
+    "attempts": 1,
+    "reconciles": 2,
+    "status": "passing",
+    "review": "approved",
+    "notes": [
+      {
+        "kind": "trap",
+        "text": "TOP 10 WITH TIES ORDER BY metric DESC: DuckDB has no WITH TIES. Converted to RANK() OVER (ORDER BY metric DESC NULLS LAST) <= 10 so all rows tied at the cutoff are kept (28 rows on dataset A, all tied at 8). NULLS LAST is written out to match Teradata DESC ordering, though COUNT(*) is never NULL. cust_id is INTEGER, so the case and trailing-space rules for strings do not apply to the GROUP BY."
+      },
+      {
+        "kind": "review:approved",
+        "text": "TOP 10 WITH TIES is correctly mapped to RANK() <= 10, which keeps ties, including ties at the cutoff. ORDER BY metric DESC NULLS LAST matches Teradata putting NULLs lowest. COUNT(*) is never NULL anyway. cust_id is INTEGER in the source, so the case and trailing-space rules do not apply to the GROUP BY. Nothing is hard-coded and nothing depends on row order."
+      }
+    ]
+  },
+  "g23_topk": {
+    "attempts": 1,
+    "reconciles": 2,
+    "status": "passing",
+    "review": "approved",
+    "notes": [
+      {
+        "kind": "trap",
+        "text": "TOP 5 WITH TIES -> RANK() OVER (ORDER BY metric DESC NULLS LAST) <= 5. This keeps ties at the cutoff, so dataset A returns 6 rows. Teradata sorts NULLs lowest, so they go last in DESC order: a customer whose total_items are all NULL gets a NULL metric and only shows up if there are fewer than 5 non-NULL metrics. cust_id is INTEGER, so the character-comparison rules do not apply to the GROUP BY."
+      },
+      {
+        "kind": "review:approved",
+        "text": "TOP 5 WITH TIES is correctly mapped to RANK() <= 5. The explicit DESC NULLS LAST matters here: on other data, a customer whose total_items values are all NULL gets a NULL SUM and must not take a top slot, matching Teradata where NULLs sort lowest. Dataset A has no NULL total_items, so this rule is applied in general and not fitted to the data. cust_id is INTEGER, so the string rules do not apply. SUM of INTEGER has no rounding or division issues. Nothing is hard-coded."
+      }
+    ]
+  },
+  "g24_category_lines": {
+    "attempts": 1,
+    "reconciles": 2,
+    "status": "passing",
+    "review": "approved",
+    "notes": [
+      {
+        "kind": "trap",
+        "text": "Session-mode comparisons ignore case and trailing spaces. The CHAR(10) sku join and the category = 'Books' filter now compare lower(rtrim(x, ' ')) on both sides, so padded or differently-cased skus and categories still match. Leading spaces still count, as in Teradata."
+      },
+      {
+        "kind": "review:approved",
+        "text": "Both string comparisons follow session-mode semantics: the sku join key (CHAR(10)-padded; every order_lines.sku has trailing spaces in A) and the category filter. Both sides of each comparison use lower(rtrim(x, ' ')), so the comparisons ignore case and trailing spaces. Only spaces are trimmed and leading spaces still count. 'Books' is the legacy literal, not a value taken from the data. qty * unit_price (INTEGER x DECIMAL(12,2)) is exact DECIMAL multiplication with no rounding. The inner join keeps duplicate matches like the MULTISET legacy table. One small note, no change needed: Teradata compares NOT CASESPECIFIC values by upper-casing them. lower() and upper() only give different results for a few rare Unicode characters, so the risk is negligible for this ASCII data."
+      }
+    ]
+  },
+  "g25_rounding": {
+    "attempts": 1,
+    "reconciles": 2,
+    "status": "passing",
+    "review": "approved",
+    "notes": [
+      {
+        "kind": "trap",
+        "text": "CAST(SUM(amount) AS DECIMAL(14,1)): Teradata rounds half-to-even (RoundHalfwayMagUp=FALSE), but DuckDB's CAST rounds half away from zero and round_even goes through a double. Replaced with exact integer half-even on the scale-2 sum (sum*100 as HUGEINT, split into sign and abs, quotient/remainder by 10). Handles negatives, and a NULL sum stays NULL."
+      },
+      {
+        "kind": "review:approved",
+        "text": "Matches the legacy CAST(SUM(amount) AS DECIMAL(14,1)) with Teradata half-to-even rounding (RoundHalfwayMagUp=FALSE). The rounding is exact integer arithmetic on the scale-2 sum (c = SUM*100 as HUGEINT). Ties round to even (rm=5 AND qt odd). Negatives are handled symmetrically through the sign/abs split, so -0.05 becomes -0.0 and -0.15 becomes -0.2. NULL sums stay NULL because sign(NULL) is NULL. Nothing is hard-coded from the data: the only literal is the legacy date filter, which is kept as is. One residual assumption: this relies on orders.amount being DECIMAL(x,2) (it is DECIMAL(12,2) in the source). If the column scale ever increases, the *100 HUGEINT cast would round silently, so update the scale factor if that happens."
+      },
+      {
+        "kind": "risk",
+        "text": "The exact half-to-even rounding assumes orders.amount has scale 2 (DECIMAL(12,2) today). It does this by casting SUM(amount)*100 to HUGEINT. If the source column scale changes, that cast would round silently, and the scale factor would have to be updated."
+      }
+    ]
+  },
+  "g26_channel_revenue": {
+    "attempts": 1,
+    "reconciles": 2,
+    "status": "passing",
+    "review": "approved",
+    "notes": [
+      {
+        "kind": "trap",
+        "text": "The filter channel = 'App' is NOT CASESPECIFIC in Teradata session mode, and trailing spaces are ignored. It is converted as lower(rtrim(channel,' ')) = lower(rtrim('App',' ')), so channel values that differ only in case or trailing padding are still counted."
+      },
+      {
+        "kind": "review:approved",
+        "text": "The only string comparison (channel = 'App') uses Teradata session-mode semantics as a general rule: lower() on both sides (NOT CASESPECIFIC) and rtrim(x, ' ') on both sides, which ignores trailing pad but keeps leading spaces significant. On the source data this correctly matches 'App', 'APP' and 'app ' and excludes everything else. The literal comes from the legacy SQL, not the data, and there is no hard-coded spelling list. SUM and COUNT(*) are unchanged and there are no rounding, ordering or NULL-order issues."
+      }
+    ]
+  },
+  "g27_category_lines": {
+    "attempts": 1,
+    "reconciles": 2,
+    "status": "passing",
+    "review": "approved",
+    "notes": [
+      {
+        "kind": "trap",
+        "text": "Session-mode string comparison: Teradata compares strings without regard to case (NOT CASESPECIFIC) and ignores trailing spaces. order_lines.sku is CHAR(10), so its values are padded with trailing spaces. The sku join and the category = 'toys' filter both use lower(rtrim(x, ' ')) on each side. Leading spaces still matter, so ltrim is not applied."
+      },
+      {
+        "kind": "review:approved",
+        "text": "Both string comparisons get the same rule: the CHAR(10) join key ol.sku = p.sku and the filter p.category = 'toys'. Each uses lower(rtrim(x, ' ')) on both sides, which is case-insensitive and ignores trailing spaces while keeping leading spaces significant. This correctly joins order_lines.sku values that are padded and lower-case (for example 'sku0007   ') to products.sku. No values are hard-coded, the inner join and the qty * unit_price expression are the same as in the legacy SQL, and the result does not depend on row order."
+      }
+    ]
+  },
+  "g28_category_lines": {
+    "attempts": 1,
+    "reconciles": 2,
+    "status": "passing",
+    "review": "approved",
+    "notes": [
+      {
+        "kind": "trap",
+        "text": "Session-mode comparisons ignore case and trailing spaces. order_lines.sku is CHAR(10) and is padded. Both the sku join and the category = 'books' filter now use lower(rtrim(x, ' ')) on each side. Leading spaces still count."
+      },
+      {
+        "kind": "review:approved",
+        "text": "The join on CHAR(10) sku and the category filter both use lower(rtrim(x,' ')) on both sides. That matches session-mode NOT CASESPECIFIC comparison, which ignores trailing pad. Leading spaces are kept, so they stay significant. The literal is only normalised, not swapped for a data spelling. qty*unit_price is an exact multiply with no rounding or division. NULL skus drop out of the inner join on both platforms. Nothing is hard-coded from the data."
+      }
+    ]
+  },
+  "g29_topk": {
+    "attempts": 1,
+    "reconciles": 2,
+    "status": "passing",
+    "review": "approved",
+    "notes": [
+      {
+        "kind": "trap",
+        "text": "TOP 10 WITH TIES ... ORDER BY metric DESC -> RANK() OVER (ORDER BY metric DESC NULLS LAST) <= 10. Ties at the 10th place are all kept. Teradata sorts NULLs lowest, so they go last on DESC. A NULL metric (a customer whose total_items are all NULL) therefore ranks last instead of first, which is what DuckDB would otherwise do with DESC. cust_id is INTEGER, so no case or trailing-space rules apply to the grouping key. The DuckDB type of SUM(INTEGER), HUGEINT, matches the legacy output type."
+      },
+      {
+        "kind": "review:approved",
+        "text": "TOP 10 WITH TIES ORDER BY metric DESC becomes RANK() OVER (ORDER BY metric DESC NULLS LAST) <= 10. That keeps every row tied with the 10th, including a tie group that straddles position 10. NULLS LAST in DESC matches Teradata, where NULL sorts lowest. NULL metrics rank as peers, the same way Teradata ties them. Nothing depends on row order and nothing is hard-coded. Dataset A has no NULL metrics, but the rule is already general."
+      }
+    ]
+  },
+  "g30_channel_revenue": {
+    "attempts": 1,
+    "reconciles": 2,
+    "status": "passing",
+    "review": "approved",
+    "notes": [
+      {
+        "kind": "trap",
+        "text": "Session-mode comparison of channel = 'APP' ignores case and trailing spaces. Converted to lower(rtrim(channel,' ')) = lower(rtrim('APP',' ')) so channel values with different case or trailing spaces are still counted."
+      },
+      {
+        "kind": "review:approved",
+        "text": "The channel filter uses lower(rtrim(channel,' ')) = lower(rtrim('APP',' ')). That is a general case- and trailing-space-insensitive comparison: it picks up 'APP', 'App' and 'app ' in dataset A, and any other case or padding variant, without listing spellings from the data. Leading spaces stay significant. SUM and COUNT(*) have no rounding, division or ZEROIFNULL issues."
+      }
+    ]
+  },
+  "g31_status_counts": {
+    "attempts": 1,
+    "reconciles": 2,
+    "status": "passing",
+    "review": "approved",
+    "notes": [
+      {
+        "kind": "trap",
+        "text": "Session-mode string comparison is NOT CASESPECIFIC and ignores trailing spaces: the status IN ('delivered') test is written as lower(rtrim(status, ' ')) IN (lower(rtrim('delivered', ' '))) so values with different case or trailing blanks still count. Only spaces are trimmed (rtrim(x, ' ')), and leading spaces still matter."
+      },
+      {
+        "kind": "review:approved",
+        "text": "The only string comparison (status IN ('delivered')) is wrapped as lower(rtrim(x,' ')) on both sides. That is session-mode NOT CASESPECIFIC with trailing-space padding, and leading spaces stay significant. The literal comes from the legacy SQL, not the data, and nothing is hard-coded. cust_id is INTEGER, so grouping needs no string handling. COUNT(*) and SUM(CASE ... 0/1) over non-empty groups cannot be NULL. The script does not depend on rows coming in any order."
+      }
+    ]
+  },
+  "g32_dep_seg_orders": {
+    "attempts": 1,
+    "reconciles": 2,
+    "status": "passing",
+    "review": "approved",
+    "notes": [
+      {
+        "kind": "trap",
+        "text": "Session mode string comparison: o.status = 'Shipped' is NOT CASESPECIFIC and ignores trailing spaces in Teradata; translated to lower(rtrim(o.status,' ')) = lower(rtrim('Shipped',' ')). The join key cust_id is INTEGER on both sides, so the join needs no string handling. COUNT(*) gives BIGINT, which matches the legacy column type."
+      },
+      {
+        "kind": "review:approved",
+        "text": "The status = 'Shipped' filter uses lower(rtrim(...,' ')) on both sides, so it matches 'Shipped', 'shipped' and 'SHIPPED ' as Teradata does, and leading spaces stay significant. The join key cust_id is INTEGER in both seg_gold_14 and orders, so the join needs no case or space handling. The script takes upstream g14 (segment filter) as given and hard-codes nothing. The script does not depend on rows coming in any order."
+      }
+    ]
+  },
+  "g33_dep_seg_orders": {
+    "attempts": 1,
+    "reconciles": 2,
+    "status": "passing",
+    "review": "approved",
+    "notes": [
+      {
+        "kind": "trap",
+        "text": "Teradata session mode: the filter o.status = 'DELIVERED' ignores case and trailing spaces. Converted to lower(rtrim(o.status,' ')) = lower(rtrim('DELIVERED',' ')). The cust_id join is INTEGER = INTEGER, so it needs no string normalization."
+      },
+      {
+        "kind": "review:approved",
+        "text": "Faithful to legacy. The status predicate uses lower(rtrim(x,' ')) on BOTH sides, so it is case- and trailing-space-insensitive and leaves leading spaces significant. That matches Teradata session-mode NOT CASESPECIFIC semantics and covers all the spellings in source (Delivered, delivered, and padded variants of other statuses). The join is on cust_id, which is INTEGER, so no string rule applies. The literal 'DELIVERED' comes from the legacy SQL, not the data. COUNT(*) has no rounding, division or ordering concerns. No hard-coded keys."
+      }
+    ]
+  },
+  "g34_dep_seg_orders": {
+    "attempts": 1,
+    "reconciles": 2,
+    "status": "passing",
+    "review": "approved",
+    "notes": [
+      {
+        "kind": "trap",
+        "text": "Teradata session mode compares strings case-insensitively and ignores trailing spaces. The filter o.status = 'DELIVERED' is migrated as lower(rtrim(o.status,' ')) = lower(rtrim('DELIVERED',' ')), with the same treatment on both sides. The cust_id join is INTEGER = INTEGER, so it needs no change."
+      },
+      {
+        "kind": "review:approved",
+        "text": "Identical pattern to g33 against seg_gold_11. The status comparison normalizes both sides with lower(rtrim(x,' ')), so it is case-insensitive, ignores trailing spaces and keeps leading spaces significant. The cust_id join is INTEGER, so no collation issue. No values or keys from the data are hard-coded, and nothing depends on order."
+      }
+    ]
+  },
+  "g35_dep_lines_by_status": {
+    "attempts": 1,
+    "reconciles": 2,
+    "status": "passing",
+    "review": "approved",
+    "notes": [
+      {
+        "kind": "trap",
+        "text": "Session-mode string comparison: o.status = 'SHIPPED' is NOT CASESPECIFIC and ignores trailing spaces in Teradata; implemented as lower(rtrim(o.status,' ')) = lower(rtrim('SHIPPED',' ')). The join on order_id is INTEGER = INTEGER, so it needs no change."
+      },
+      {
+        "kind": "trap",
+        "text": "CAST(SUM(line_amount) AS DECIMAL(14,1)) rounds half-to-even in Teradata (RoundHalfwayMagUp=FALSE). DuckDB's CAST rounds half away from zero, and round_even goes through a double. Used exact integer half-even on the sum scaled by 100, because line_amount = INTEGER qty * DECIMAL(12,2) unit_price has scale 2. Sign-aware, and NULL sums pass through as NULL. Same pattern as g05."
+      },
+      {
+        "kind": "review:approved",
+        "text": "The status filter uses case-insensitive, trailing-space-insensitive comparison, and order_id is an INTEGER join. For CAST(... AS DECIMAL(14,1)) the target does exact integer half-to-even rounding: cents = SUM*100 as HUGEINT, rounded on abs() and multiplied back by sign(). It is therefore symmetric for negatives, gives 0 for 0, and NULL passes through (sg/qt/rm become NULL, so the result is NULL). The result is rebuilt as DECIMAL(37,0) * 0.1, which is exact, and no double is involved. Dataset A has 15 rows at exactly .x5 and they reconcile. Scale assumption: the code assumes SUM(line_amount) has scale 2 (INTEGER qty * DECIMAL(12,2) unit_price in g27), which is correct for the current schema. If unit_price's scale ever changes, the *100 step must change with it, which the header comment documents. Type: legacy amount_1dp is reported as DOUBLE, but the legacy expression is a DECIMAL(14,1) CAST. Emitting DECIMAL(14,1) gives the same values and is the more faithful type, so it is acceptable. amount is a DECIMAL(38,2) SUM, the same as legacy."
+      },
+      {
+        "kind": "risk",
+        "text": "The half-even rounding for amount_1dp assumes SUM(line_amount) has scale 2 (cents = SUM*100), which follows from order_lines.unit_price being DECIMAL(12,2). If that column's scale changes, the scale factor must change too. Legacy amount_1dp is stored as DOUBLE; the target emits DECIMAL(14,1) with the same values."
+      }
+    ]
+  },
+  "g36_dep_lines_by_status": {
+    "attempts": 1,
+    "reconciles": 2,
+    "status": "passing",
+    "review": "approved",
+    "notes": [
+      {
+        "kind": "trap",
+        "text": "Session mode string compare: o.status = 'DELIVERED' is NOT CASESPECIFIC and ignores trailing spaces; implemented as lower(rtrim(x,' ')) on both sides."
+      },
+      {
+        "kind": "trap",
+        "text": "CAST(SUM(line_amount) AS DECIMAL(14,1)) rounds half-to-even (RoundHalfwayMagUp=FALSE). Implemented with exact integer arithmetic on the scale-2 sum (sign/abs for negatives; NULL sums propagate NULL), result typed DECIMAL(14,1)."
+      },
+      {
+        "kind": "review:approved",
+        "text": "Status filter uses lower(rtrim(x,' ')) on both sides, which is correct session-mode semantics. The order_id join is INTEGER. CAST(SUM(...) AS DECIMAL(14,1)) is implemented as exact half-to-even rounding (RoundHalfwayMagUp=FALSE). The sum goes to HUGEINT cents; that is exact because line_amount = INTEGER qty * DECIMAL(12,2) unit_price, and both the product and the SUM are DECIMAL scale 2. Rounding is done on magnitude (abs/sign), so negatives round symmetrically. A NULL sum stays NULL through sign() and the CASE. No float path, no hard-coded values. Same logic as the approved g35. Optional: add a comment like g35's stating that the scale-2 assumption comes from qty*unit_price. If category_lines_27 ever changes line_amount's scale, the *100 cents trick must change with it."
+      },
+      {
+        "kind": "risk",
+        "text": "The half-even rounding converts SUM(line_amount)*100 to HUGEINT, which assumes line_amount has scale 2 (INTEGER qty * DECIMAL(12,2) unit_price in category_lines_27). If the upstream type changes, the scale factor must change too."
+      }
+    ]
+  },
+  "g37_dep_lines_by_status": {
+    "attempts": 1,
+    "reconciles": 2,
+    "status": "passing",
+    "review": "approved",
+    "notes": [
+      {
+        "kind": "trap",
+        "text": "Session mode NOT CASESPECIFIC + trailing-space-insensitive: o.status = 'shipped' becomes lower(rtrim(o.status,' ')) = lower(rtrim('shipped',' ')). The order_id join is numeric, so it is left unchanged."
+      },
+      {
+        "kind": "trap",
+        "text": "RoundHalfwayMagUp=FALSE: CAST(SUM(line_amount) AS DECIMAL(14,1)) rounds half-to-even. Implemented as exact integer half-even on the scale-2 sum (line_amount is DECIMAL(18,2)), using sign/abs so it handles negatives; NULLs pass through. DuckDB's own cast would round half away from zero."
+      },
+      {
+        "kind": "review:approved",
+        "text": "The status filter compares both sides with lower(rtrim(..., ' ')). That matches session-mode NOT CASESPECIFIC comparison with trailing pad ignored. Leading spaces stay significant, and no spellings from the data are hard-coded. The join keys (order_id) and the group key (cust_id) are INTEGER, so they need no string handling. CAST to DECIMAL(14,1) is done as exact half-to-even on integer cents using sign/abs, so negatives round symmetrically. NULL sums pass through as NULL because sign(NULL) is NULL. The *100 scaling depends on line_amount having scale 2. That holds by type: qty INTEGER * unit_price DECIMAL(12,2) = DECIMAL(18,2), so the scale comes from the schema and not from the data. If unit_price ever changes to scale 3 or more, change the scale factor to match."
+      },
+      {
+        "kind": "risk",
+        "text": "The half-even CAST to DECIMAL(14,1) assumes line_amount has scale 2: it computes CAST(sum*100 AS HUGEINT). That is correct for qty INTEGER * unit_price DECIMAL(12,2). If upstream precision rises above scale 2, the HUGEINT cast would round first, and the result would be rounded twice. The same applies to g39."
+      }
+    ]
+  },
+  "g38_dep_seg_orders": {
+    "attempts": 1,
+    "reconciles": 2,
+    "status": "passing",
+    "review": "approved",
+    "notes": [
+      {
+        "kind": "trap",
+        "text": "Session-mode string comparison: o.status = 'shipped' is case-insensitive and ignores trailing spaces in Teradata. Rewritten as lower(rtrim(o.status,' ')) = lower(rtrim('shipped',' ')). The cust_id join is INTEGER = INTEGER, so it needs no change. COUNT(*) is BIGINT in DuckDB and INTEGER in Teradata, but the values match."
+      },
+      {
+        "kind": "review:approved",
+        "text": "The status filter uses case- and trailing-space-insensitive comparison on both sides, and leading spaces stay significant. The join is on cust_id (INTEGER on both seg_gold_11 and orders), so string semantics don't apply to it. COUNT(*) per group matches the legacy query. There is no ordering, rounding or division in this script, and nothing from the data is hard-coded."
+      }
+    ]
+  },
+  "g39_dep_lines_by_status": {
+    "attempts": 1,
+    "reconciles": 2,
+    "status": "passing",
+    "review": "approved",
+    "notes": [
+      {
+        "kind": "trap",
+        "text": "Session-mode string comparison: o.status = 'SHIPPED' is NOT CASESPECIFIC and ignores trailing spaces; implemented as lower(rtrim(x,' ')) on both sides."
+      },
+      {
+        "kind": "trap",
+        "text": "CAST(SUM(line_amount) AS DECIMAL(14,1)) rounds half-to-even (RoundHalfwayMagUp=FALSE). The sum has scale 2 (line_amount DECIMAL(18,2)), so it is computed exactly in integer cents with half-even on the magnitude, keeping the sign, NULL-safe."
+      },
+      {
+        "kind": "review:approved",
+        "text": "This conversion has the same structure as g37. The 'SHIPPED' literal keeps the legacy spelling, and both sides are compared with lower(rtrim(...)), so 'Shipped', 'shipped' and 'SHIPPED ' all match, as they would in Teradata session mode. The keys are INTEGER. CAST(SUM AS DECIMAL(14,1)) is exact half-to-even, symmetric for negatives and NULL-safe. The scale-2 assumption comes from the schema (INTEGER * DECIMAL(12,2)). If unit_price's scale ever changes, change the *100 factor to match."
+      }
+    ]
+  },
+  "g40_dep_lines_by_status": {
+    "attempts": 1,
+    "reconciles": 2,
+    "status": "passing",
+    "review": "approved",
+    "notes": [
+      {
+        "kind": "trap",
+        "text": "Session mode string comparison (NOT CASESPECIFIC, ignores trailing spaces): status filter written as lower(rtrim(o.status,' ')) = lower(rtrim('DELIVERED',' ')) on both sides."
+      },
+      {
+        "kind": "trap",
+        "text": "CAST(SUM(line_amount) AS DECIMAL(14,1)) rounds half-to-even (RoundHalfwayMagUp=FALSE). DuckDB rounds half away from zero, so the code does exact integer half-even on the scale-2 sum (cents as HUGEINT, sign/abs for negatives; NULL sums stay NULL). It relies on line_amount having scale 2, which run_target confirmed: amount is DECIMAL(38,2)."
+      },
+      {
+        "kind": "review:approved",
+        "text": "Status filter applies session-mode NOT CASESPECIFIC + trailing-pad-insensitive comparison as a general rule (lower(rtrim(x,' ')) on both sides; leading spaces stay significant); source has 'Delivered'/'delivered'/'SHIPPED ' variants and no spelling is hard-coded beyond the legacy literal. order_id join is INTEGER=INTEGER, so no string rule needed. CAST(SUM AS DECIMAL(14,1)) is done as exact half-to-even integer arithmetic: line_amount = INTEGER qty * DECIMAL(12,2) unit_price is scale 2 by construction, so SUM*100 -> HUGEINT is exact. sign/abs split handles negatives, and NULL sums propagate to NULL. The unrounded amount column is passed through unchanged. Optional: add a comment noting the scale-2 assumption depends on g24's line_amount type."
+      },
+      {
+        "kind": "risk",
+        "text": "The exact half-even CAST to DECIMAL(14,1) works by converting SUM(line_amount)*100 to HUGEINT, which assumes line_amount has scale 2 (INTEGER qty * DECIMAL(12,2) unit_price in g24). If the type of order_lines.unit_price or g24's line_amount changes scale, the scaling factor has to change with it."
+      }
+    ]
+  },
+  "g41_dep_seg_orders": {
+    "attempts": 1,
+    "reconciles": 2,
+    "status": "passing",
+    "review": "approved",
+    "notes": [
+      {
+        "kind": "trap",
+        "text": "Teradata session mode compares strings NOT CASESPECIFIC and ignores trailing spaces. The status filter is now lower(rtrim(o.status,' ')) = lower(rtrim('Delivered',' ')), so 'delivered', 'DELIVERED ' and similar values still match. The join key cust_id is INTEGER, so the join needs no change. COUNT(*) is BIGINT in DuckDB."
+      },
+      {
+        "kind": "review:approved",
+        "text": "Matches the legacy logic. The status filter compares case-insensitively and ignores trailing spaces (lower(rtrim(..., ' '))) on both sides. It only right-trims, so leading spaces still count. 'Delivered' is the legacy literal, not a value taken from the data. The join key cust_id is INTEGER in orders and in seg_gold_11, so it needs no string handling. The output has no ORDER BY, rounding or division. Nothing is hard-coded from the data."
+      }
+    ]
+  },
+  "g42_dep_round_rank": {
+    "attempts": 1,
+    "reconciles": 2,
+    "status": "passing",
+    "review": "approved",
+    "notes": [
+      {
+        "kind": "trap",
+        "text": "TOP 10 WITH TIES ORDER BY value_1dp DESC -> RANK() OVER (ORDER BY value_1dp DESC NULLS LAST) <= 10. Teradata sorts NULLs lowest, so in DESC they go last and a NULL value_1dp (customer with NULL sum) can't take a top slot. DuckDB's default puts NULLs last too, but it's written out explicitly. Ties are evaluated on the rounded DECIMAL(14,1) from g20 (half-even), not on the raw sum, so amounts that round to the same value tie, as they did in legacy."
+      },
+      {
+        "kind": "decision",
+        "text": "The script has no string comparisons, no integer division and no ZEROIFNULL, so those semantics don't apply here. Columns are passed through unchanged from value_1dp_20 (cust_id and value_1dp DECIMAL(14,1)), so the types match legacy. The row count can be above 10 when there are ties at rank 10, as with legacy WITH TIES."
+      },
+      {
+        "kind": "review:approved",
+        "text": "TOP 10 WITH TIES ORDER BY value_1dp DESC is correctly expressed as RANK() OVER (ORDER BY value_1dp DESC NULLS LAST) <= 10. That keeps every row tied with the 10th, and NULLs sort lowest as in Teradata (they are only included if fewer than 10 non-NULL rows exist, matching TOP semantics). Ranking runs on the already-rounded DECIMAL(14,1) from value_1dp_20, whose upstream conversion uses exact half-even rounding. No hard-coded values and no dependence on row order. Nit: add the explanatory header comments as in g46."
+      }
+    ]
+  },
+  "g43_dep_seg_orders": {
+    "attempts": 1,
+    "reconciles": 2,
+    "status": "passing",
+    "review": "approved",
+    "notes": [
+      {
+        "kind": "trap",
+        "text": "Teradata session mode compares strings NOT CASESPECIFIC and ignores trailing spaces. The filter o.status = 'Pending' became lower(rtrim(o.status,' ')) = lower(rtrim('Pending',' ')), with the rule applied on both sides. The cust_id join is INTEGER, so it needs no change. COUNT(*) gives BIGINT, which matches the legacy output."
+      },
+      {
+        "kind": "review:approved",
+        "text": "Matches the legacy logic. The status filter compares case-insensitively and ignores trailing spaces on both sides. It only right-trims, so leading spaces still count. This covers source variants like 'Pending ' and 'pending' as a general rule, not as listed spellings. The join key cust_id is INTEGER in both tables. Nothing is hard-coded from the data."
+      }
+    ]
+  },
+  "g44_dep_lines_by_status": {
+    "attempts": 1,
+    "reconciles": 2,
+    "status": "passing",
+    "review": "approved",
+    "notes": [
+      {
+        "kind": "trap",
+        "text": "Session-mode status filter (o.status = 'Delivered') is NOT CASESPECIFIC and ignores trailing spaces: implemented as lower(rtrim(x,' ')) on both sides."
+      },
+      {
+        "kind": "trap",
+        "text": "CAST(SUM(line_amount) AS DECIMAL(14,1)) rounds half-to-even under RoundHalfwayMagUp=FALSE. line_amount is scale 2 (INTEGER qty * DECIMAL(12,2) unit_price), so the code uses exact integer half-even on the hundredths: sign-aware, so negatives work, and a NULL passes through as NULL. DuckDB's own cast rounds half away from zero."
+      },
+      {
+        "kind": "review:approved",
+        "text": "Matches the legacy logic. The status filter compares case-insensitively and ignores trailing spaces (rtrim only, so leading spaces still count). The join on order_id is INTEGER. CAST to DECIMAL(14,1) is done as exact integer half-to-even rounding: sign/abs makes negatives symmetric, and NULL sums stay NULL through sign and arithmetic. No double is used. The scale-2 assumption (SUM*100 -> HUGEINT) comes from the schema, not the data: line_amount = INTEGER qty * DECIMAL(12,2) unit_price in category_lines_04, so its scale is always 2. Non-blocking: if upstream unit_price ever gains more than 2 decimal places, the HUGEINT cast would round silently. Consider deriving the scale or asserting it."
+      },
+      {
+        "kind": "risk",
+        "text": "The half-even rounding to DECIMAL(14,1) uses SUM(line_amount)*100 cast to HUGEINT. This assumes line_amount has scale 2, which holds because order_lines.unit_price is DECIMAL(12,2) and qty is INTEGER. If the source schema changes the scale, this must be revisited."
+      }
+    ]
+  },
+  "g45_dep_lines_by_status": {
+    "attempts": 1,
+    "reconciles": 2,
+    "status": "passing",
+    "review": "approved",
+    "notes": [
+      {
+        "kind": "trap",
+        "text": "Session mode string compare: o.status = 'DELIVERED' is NOT CASESPECIFIC and ignores trailing spaces -> lower(rtrim(o.status,' ')) = lower(rtrim('DELIVERED',' '))."
+      },
+      {
+        "kind": "trap",
+        "text": "CAST(SUM(line_amount) AS DECIMAL(14,1)) rounds half-to-even (RoundHalfwayMagUp=FALSE); line_amount is DECIMAL(18,2), so it is implemented as exact integer half-even on the cents value (sign-aware, NULL propagates) instead of DuckDB's half-away-from-zero cast."
+      },
+      {
+        "kind": "review:approved",
+        "text": "Matches the legacy logic. The status filter is case-insensitive and ignores trailing spaces only (rtrim(' ') on both sides, so leading spaces still count). This holds for all status spellings in the source (e.g. 'Delivered', 'delivered' and the trailing-space variants). The join is on INTEGER order_id, so no string rule is needed there. The DECIMAL(14,1) cast rounds half-to-even exactly with integer arithmetic on abs(cents), restoring the sign afterwards, so negatives are symmetric and NULL sums stay NULL. The scale-2 assumption is safe because the scale comes from the schema, not the data: line_amount = INTEGER qty * DECIMAL(12,2) unit_price, so the sum has scale 2 and *100 is exact. The only value in the code is the literal 'DELIVERED' from the legacy SQL; nothing is hard-coded from the data. Minor risk: if the upstream line_amount scale ever goes above 2, the HUGEINT cast would round early. Derive the multiplier from the scale if that type changes."
+      },
+      {
+        "kind": "risk",
+        "text": "The half-even DECIMAL(14,1) rounding multiplies by 100 and casts to HUGEINT, which assumes line_amount has scale 2. That is true today (INTEGER qty * DECIMAL(12,2) unit_price in g28). If the upstream type changes to a scale above 2, the cast would round too early."
+      }
+    ]
+  },
+  "g46_dep_round_rank": {
+    "attempts": 1,
+    "reconciles": 3,
+    "status": "passing",
+    "review": "approved",
+    "notes": [
+      {
+        "kind": "trap",
+        "text": "TOP 10 WITH TIES ORDER BY value_1dp DESC -> RANK() OVER (ORDER BY value_1dp DESC NULLS LAST) <= 10. Teradata sorts NULLs lowest (last in DESC); DuckDB's default would also put them last in DESC, but it is written explicitly so a NULL value_1dp never takes a top slot."
+      },
+      {
+        "kind": "trap",
+        "text": "Ties are decided on the DECIMAL(14,1) value from value_1dp_05, which is already rounded half-to-even (RoundHalfwayMagUp=FALSE, done in g05). The ranking uses that column as it is and does not recompute it from the raw sum, so which rows tie depends on the legacy rounding."
+      },
+      {
+        "kind": "review:approved",
+        "text": "Matches the legacy TOP 10 WITH TIES: RANK() <= 10 keeps ties, and DESC NULLS LAST reproduces Teradata's NULL-lowest ordering. Ranking runs on the already-rounded value_1dp from value_1dp_05 (exact half-even upstream), so ties follow the rounded value. No hard-coded data and no reliance on row order."
+      }
+    ]
+  },
+  "g47_dep_seg_orders": {
+    "attempts": 1,
+    "reconciles": 2,
+    "status": "passing",
+    "review": "approved",
+    "notes": [
+      {
+        "kind": "trap",
+        "text": "Teradata session mode: the filter o.status = 'delivered' ignores case and trailing spaces. In DuckDB it becomes lower(rtrim(o.status,' ')) = lower(rtrim('delivered',' ')), so mixed-case or space-padded status values still match. The join on cust_id is INTEGER = INTEGER, so it needs no change. COUNT(*) stays BIGINT."
+      },
+      {
+        "kind": "review:approved",
+        "text": "Faithful to the legacy SQL. The status comparison is case-insensitive and ignores trailing spaces only (lower(rtrim(x,' ')) on both sides, leading spaces still count), so it matches 'Delivered', 'delivered' and trailing-space variants on any data. The join key cust_id is INTEGER, so no string rule applies there. There is no rounding, division or ordering to handle. Only the literal from the legacy SQL is used; nothing is hard-coded from the data."
+      }
+    ]
+  },
+  "g48_dep_seg_orders": {
+    "attempts": 1,
+    "reconciles": 2,
+    "status": "passing",
+    "review": "approved",
+    "notes": [
+      {
+        "kind": "trap",
+        "text": "Teradata session mode compares strings NOT CASESPECIFIC and ignores trailing spaces. The filter o.status = 'pending' becomes lower(rtrim(o.status,' ')) = lower(rtrim('pending',' ')) on both sides. Leading spaces are left as they are, because they still count in Teradata. The join key cust_id is an INTEGER, so it needs no normalisation. NULL status is excluded, the same as in legacy."
+      },
+      {
+        "kind": "review:approved",
+        "text": "Faithful to the legacy SQL. The status comparison is case-insensitive and ignores trailing spaces only (lower(rtrim(x,' ')) on both sides), so it correctly matches 'pending' and 'Pending ' (trailing space) as in the source, and generalizes. The join key cust_id is INTEGER. There is no rounding, division or ordering to handle. Nothing is hard-coded from the data."
+      }
+    ]
+  }
+}

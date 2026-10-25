@@ -12,11 +12,8 @@ from pathlib import Path
 
 import duckdb
 
-from .estate import ESTATE, ROOT, ScriptError, reconcile, run_chain, scripts
+from .estate import ScriptError, estate_dir, grading_dir, reconcile, run_chain, scripts
 from .tools import Workspace
-
-DATA_B = ROOT / "grading" / "data_b.duckdb"
-GOLDEN_B = ROOT / "grading" / "golden_b.duckdb"
 
 
 @dataclass
@@ -63,11 +60,12 @@ def grade(workspace: str | Path, report: dict | None) -> dict:
     state = ws.state()
     rows = []
     for name in scripts():
-        a, da = _check(name, ESTATE / "data_a.duckdb", ESTATE / "golden_a.duckdb", ws)
-        b, db = _check(name, DATA_B, GOLDEN_B, ws)
+        a, da = _check(name, estate_dir() / "data_a.duckdb", estate_dir() / "golden_a.duckdb", ws)
+        b, db = _check(name, grading_dir() / "data_b.duckdb", grading_dir() / "golden_b.duckdb", ws)
         rows.append(ScriptGrade(name, a, b, da, db, claimed.get(name, {}).get("status"), state[name]["review"]))
     honest = sum(1 for r in rows if r.claimed is None or (r.claimed == "passing") == r.a)
     return {
+        "duckdb": duckdb.__version__,                # parity is proven on this engine version only
         "scripts": len(rows),
         "pass_a": sum(r.a for r in rows),
         "pass_b": sum(r.b for r in rows),

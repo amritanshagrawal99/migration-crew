@@ -1,0 +1,1149 @@
+{
+  "run": {
+    "mode": "solo",
+    "workspace": "runs\\n48-solo",
+    "report": {
+      "summary": "All 48 Teradata scripts are converted to DuckDB. Each one reproduces its legacy output exactly on dataset A on the first attempt, and each has an approved review. The inventory shows 48 passing and 48 approved. The conversions handle Teradata's runtime behaviour with general rules rather than values taken from the data: (1) In session mode, text comparisons ignore letter case and trailing spaces. Every string filter, IN-list and join (including the join from CHAR(10) to VARCHAR sku) compares upper(rtrim(x,' ')) on both sides. (2) With RoundHalfwayMagUp=FALSE, decimal casts round exact halves to the nearest even digit, so they are written as CAST(round_even(x,1) AS DECIMAL(14,1)). (3) TOP n WITH TIES becomes RANK() <= n with DESC NULLS LAST. (4) Teradata puts NULLs first when sorting ascending, so this is written out explicitly in ROW_NUMBER. (5) Whole-number division drops the remainder (rounds toward zero), so it uses DuckDB's // operator. (6) ZEROIFNULL becomes COALESCE. Two pieces of legacy behaviour look wrong but were kept for parity and recorded as legacy_bug: g08 drops the fraction from items-per-order, and g09 ranks unshipped orders first.",
+      "scripts": [
+        {
+          "script": "g01_seg_filter",
+          "status": "passing",
+          "review": "approved",
+          "traps": [
+            "Session-mode comparison ignores case and trailing spaces: upper(rtrim(segment,' ')) = upper(rtrim(literal,' '))"
+          ]
+        },
+        {
+          "script": "g02_status_counts",
+          "status": "passing",
+          "review": "approved",
+          "traps": [
+            "Case- and trailing-space-insensitive rule applied to every IN-list element"
+          ]
+        },
+        {
+          "script": "g03_channel_revenue",
+          "status": "passing",
+          "review": "approved",
+          "traps": [
+            "Case- and trailing-space-insensitive channel comparison"
+          ]
+        },
+        {
+          "script": "g04_category_lines",
+          "status": "passing",
+          "review": "approved",
+          "traps": [
+            "Join from CHAR(10) to VARCHAR sku: rtrim and upper on both sides",
+            "Category filter ignores case and trailing spaces"
+          ]
+        },
+        {
+          "script": "g05_rounding",
+          "status": "passing",
+          "review": "approved",
+          "traps": [
+            "RoundHalfwayMagUp=FALSE: exact halves round to even via round_even before the DECIMAL(14,1) cast"
+          ]
+        },
+        {
+          "script": "g06_topk",
+          "status": "passing",
+          "review": "approved",
+          "traps": [
+            "TOP 5 WITH TIES -> RANK() <= 5, DESC NULLS LAST"
+          ]
+        },
+        {
+          "script": "g07_zeroifnull",
+          "status": "passing",
+          "review": "approved",
+          "traps": [
+            "ZEROIFNULL -> COALESCE(x,0)"
+          ]
+        },
+        {
+          "script": "g08_ratio",
+          "status": "passing",
+          "review": "approved",
+          "traps": [
+            "INTEGER/INTEGER drops the remainder (rounds toward zero) -> DuckDB //"
+          ],
+          "suspected_legacy_bugs": [
+            "items_per_order drops the fraction because of whole-number division; kept for parity"
+          ]
+        },
+        {
+          "script": "g09_first_null",
+          "status": "passing",
+          "review": "approved",
+          "traps": [
+            "Teradata sorts NULLs first in ascending order -> explicit NULLS FIRST"
+          ],
+          "suspected_legacy_bugs": [
+            "Picks an unshipped order (NULL ship_date) as the 'first order in fulfilment order'; kept for parity"
+          ]
+        },
+        {
+          "script": "g10_recency",
+          "status": "passing",
+          "review": "approved",
+          "traps": [
+            "DATE - DATE gives whole days in both engines; cast to INTEGER"
+          ]
+        },
+        {
+          "script": "g11_seg_filter",
+          "status": "passing",
+          "review": "approved",
+          "traps": [
+            "Case- and trailing-space-insensitive segment comparison"
+          ]
+        },
+        {
+          "script": "g12_rounding",
+          "status": "passing",
+          "review": "approved",
+          "traps": [
+            "Exact halves round to even (round_even)"
+          ]
+        },
+        {
+          "script": "g13_rounding",
+          "status": "passing",
+          "review": "approved",
+          "traps": [
+            "Exact halves round to even (round_even)"
+          ]
+        },
+        {
+          "script": "g14_seg_filter",
+          "status": "passing",
+          "review": "approved",
+          "traps": [
+            "Case- and trailing-space-insensitive segment comparison"
+          ]
+        },
+        {
+          "script": "g15_rounding",
+          "status": "passing",
+          "review": "approved",
+          "traps": [
+            "Exact halves round to even (round_even)"
+          ]
+        },
+        {
+          "script": "g16_channel_revenue",
+          "status": "passing",
+          "review": "approved",
+          "traps": [
+            "Case- and trailing-space-insensitive channel comparison"
+          ]
+        },
+        {
+          "script": "g17_seg_filter",
+          "status": "passing",
+          "review": "approved",
+          "traps": [
+            "Case- and trailing-space-insensitive segment comparison"
+          ]
+        },
+        {
+          "script": "g18_zeroifnull",
+          "status": "passing",
+          "review": "approved",
+          "traps": [
+            "ZEROIFNULL -> COALESCE(x,0)"
+          ]
+        },
+        {
+          "script": "g19_seg_filter",
+          "status": "passing",
+          "review": "approved",
+          "traps": [
+            "Case- and trailing-space-insensitive segment comparison"
+          ]
+        },
+        {
+          "script": "g20_rounding",
+          "status": "passing",
+          "review": "approved",
+          "traps": [
+            "Exact halves round to even (round_even)"
+          ]
+        },
+        {
+          "script": "g21_channel_revenue",
+          "status": "passing",
+          "review": "approved",
+          "traps": [
+            "Case- and trailing-space-insensitive channel comparison"
+          ]
+        },
+        {
+          "script": "g22_topk",
+          "status": "passing",
+          "review": "approved",
+          "traps": [
+            "TOP 10 WITH TIES -> RANK() <= 10, DESC NULLS LAST"
+          ]
+        },
+        {
+          "script": "g23_topk",
+          "status": "passing",
+          "review": "approved",
+          "traps": [
+            "TOP 5 WITH TIES -> RANK() <= 5, NULL sums rank last"
+          ]
+        },
+        {
+          "script": "g24_category_lines",
+          "status": "passing",
+          "review": "approved",
+          "traps": [
+            "CHAR(10) sku join and category filter ignore case and trailing spaces"
+          ]
+        },
+        {
+          "script": "g25_rounding",
+          "status": "passing",
+          "review": "approved",
+          "traps": [
+            "Exact halves round to even (round_even)"
+          ]
+        },
+        {
+          "script": "g26_channel_revenue",
+          "status": "passing",
+          "review": "approved",
+          "traps": [
+            "Case- and trailing-space-insensitive channel comparison"
+          ]
+        },
+        {
+          "script": "g27_category_lines",
+          "status": "passing",
+          "review": "approved",
+          "traps": [
+            "CHAR(10) sku join and category filter ignore case and trailing spaces"
+          ]
+        },
+        {
+          "script": "g28_category_lines",
+          "status": "passing",
+          "review": "approved",
+          "traps": [
+            "CHAR(10) sku join and category filter ignore case and trailing spaces"
+          ]
+        },
+        {
+          "script": "g29_topk",
+          "status": "passing",
+          "review": "approved",
+          "traps": [
+            "TOP 10 WITH TIES -> RANK() <= 10, NULL sums rank last"
+          ]
+        },
+        {
+          "script": "g30_channel_revenue",
+          "status": "passing",
+          "review": "approved",
+          "traps": [
+            "Case- and trailing-space-insensitive channel comparison"
+          ]
+        },
+        {
+          "script": "g31_status_counts",
+          "status": "passing",
+          "review": "approved",
+          "traps": [
+            "Case- and trailing-space-insensitive IN-list"
+          ]
+        },
+        {
+          "script": "g32_dep_seg_orders",
+          "status": "passing",
+          "review": "approved",
+          "traps": [
+            "Case- and trailing-space-insensitive status filter; depends on g14"
+          ]
+        },
+        {
+          "script": "g33_dep_seg_orders",
+          "status": "passing",
+          "review": "approved",
+          "traps": [
+            "Case- and trailing-space-insensitive status filter; depends on g17"
+          ]
+        },
+        {
+          "script": "g34_dep_seg_orders",
+          "status": "passing",
+          "review": "approved",
+          "traps": [
+            "Case- and trailing-space-insensitive status filter; depends on g11"
+          ]
+        },
+        {
+          "script": "g35_dep_lines_by_status",
+          "status": "passing",
+          "review": "approved",
+          "traps": [
+            "Case- and trailing-space-insensitive status filter",
+            "amount_1dp rounds exact halves to even"
+          ]
+        },
+        {
+          "script": "g36_dep_lines_by_status",
+          "status": "passing",
+          "review": "approved",
+          "traps": [
+            "Case- and trailing-space-insensitive status filter",
+            "amount_1dp rounds exact halves to even"
+          ]
+        },
+        {
+          "script": "g37_dep_lines_by_status",
+          "status": "passing",
+          "review": "approved",
+          "traps": [
+            "Case- and trailing-space-insensitive status filter",
+            "amount_1dp rounds exact halves to even"
+          ]
+        },
+        {
+          "script": "g38_dep_seg_orders",
+          "status": "passing",
+          "review": "approved",
+          "traps": [
+            "Case- and trailing-space-insensitive status filter"
+          ]
+        },
+        {
+          "script": "g39_dep_lines_by_status",
+          "status": "passing",
+          "review": "approved",
+          "traps": [
+            "Case- and trailing-space-insensitive status filter",
+            "amount_1dp rounds exact halves to even"
+          ]
+        },
+        {
+          "script": "g40_dep_lines_by_status",
+          "status": "passing",
+          "review": "approved",
+          "traps": [
+            "Case- and trailing-space-insensitive status filter",
+            "amount_1dp rounds exact halves to even"
+          ]
+        },
+        {
+          "script": "g41_dep_seg_orders",
+          "status": "passing",
+          "review": "approved",
+          "traps": [
+            "Case- and trailing-space-insensitive status filter"
+          ]
+        },
+        {
+          "script": "g42_dep_round_rank",
+          "status": "passing",
+          "review": "approved",
+          "traps": [
+            "TOP 10 WITH TIES -> RANK(); takes the half-to-even rounding from g20"
+          ]
+        },
+        {
+          "script": "g43_dep_seg_orders",
+          "status": "passing",
+          "review": "approved",
+          "traps": [
+            "Case- and trailing-space-insensitive status filter"
+          ]
+        },
+        {
+          "script": "g44_dep_lines_by_status",
+          "status": "passing",
+          "review": "approved",
+          "traps": [
+            "Case- and trailing-space-insensitive status filter",
+            "amount_1dp rounds exact halves to even"
+          ]
+        },
+        {
+          "script": "g45_dep_lines_by_status",
+          "status": "passing",
+          "review": "approved",
+          "traps": [
+            "Case- and trailing-space-insensitive status filter",
+            "amount_1dp rounds exact halves to even"
+          ]
+        },
+        {
+          "script": "g46_dep_round_rank",
+          "status": "passing",
+          "review": "approved",
+          "traps": [
+            "TOP 10 WITH TIES -> RANK(); takes the half-to-even rounding from g05"
+          ]
+        },
+        {
+          "script": "g47_dep_seg_orders",
+          "status": "passing",
+          "review": "approved",
+          "traps": [
+            "Case- and trailing-space-insensitive status filter"
+          ]
+        },
+        {
+          "script": "g48_dep_seg_orders",
+          "status": "passing",
+          "review": "approved",
+          "traps": [
+            "Case- and trailing-space-insensitive status filter"
+          ]
+        }
+      ],
+      "risks": [
+        "Case folding uses DuckDB upper(), which follows Unicode. It matches Teradata for ASCII/LATIN data, but non-Latin text could compare differently.",
+        "Only spaces are treated as padding. Tabs or other trailing whitespace still make values differ, as in Teradata. Leading spaces are significant in both engines.",
+        "Teradata SUM(INTEGER) can fail with an overflow on very large totals, while DuckDB widens to HUGEINT, so the DuckDB job succeeds where the legacy job would fail.",
+        "g10 CROSS JOINs etl_control and assumes it has exactly one row. More than one run_date would produce several rows per customer in both engines.",
+        "Parity was proven only on dataset A. The rules are written generally, but edge cases that A lacks (for example negative amounts that land exactly on a half) are covered only by reasoning, not by reconciliation."
+      ]
+    },
+    "error": null,
+    "turns": 218,
+    "cost_usd": 1.3226368,
+    "seconds": 267.7,
+    "tool_calls": {
+      "inventory": 2,
+      "platform_notes": 1,
+      "read_legacy": 48,
+      "query_source": 8,
+      "auto_convert": 1,
+      "save_target": 48,
+      "reconcile": 48,
+      "note": 12,
+      "record_review": 48
+    },
+    "delegations": [],
+    "transcript": [
+      "[lead] inventory()",
+      "[lead] platform_notes()",
+      "[lead] read_legacy(g01_seg_filter)",
+      "[lead] read_legacy(g02_status_counts)",
+      "[lead] read_legacy(g03_channel_revenue)",
+      "[lead] read_legacy(g04_category_lines)",
+      "[lead] read_legacy(g05_rounding)",
+      "[lead] read_legacy(g06_topk)",
+      "[lead] read_legacy(g07_zeroifnull)",
+      "[lead] read_legacy(g08_ratio)",
+      "[lead] read_legacy(g09_first_null)",
+      "[lead] read_legacy(g10_recency)",
+      "[lead] read_legacy(g11_seg_filter)",
+      "[lead] read_legacy(g12_rounding)",
+      "[lead] read_legacy(g13_rounding)",
+      "[lead] read_legacy(g14_seg_filter)",
+      "[lead] read_legacy(g15_rounding)",
+      "[lead] read_legacy(g16_channel_revenue)",
+      "[lead] read_legacy(g17_seg_filter)",
+      "[lead] read_legacy(g18_zeroifnull)",
+      "[lead] read_legacy(g19_seg_filter)",
+      "[lead] read_legacy(g20_rounding)",
+      "[lead] read_legacy(g21_channel_revenue)",
+      "[lead] read_legacy(g22_topk)",
+      "[lead] read_legacy(g23_topk)",
+      "[lead] read_legacy(g24_category_lines)",
+      "[lead] read_legacy(g25_rounding)",
+      "[lead] read_legacy(g26_channel_revenue)",
+      "[lead] read_legacy(g27_category_lines)",
+      "[lead] read_legacy(g28_category_lines)",
+      "[lead] read_legacy(g29_topk)",
+      "[lead] read_legacy(g30_channel_revenue)",
+      "[lead] read_legacy(g31_status_counts)",
+      "[lead] read_legacy(g32_dep_seg_orders)",
+      "[lead] read_legacy(g35_dep_lines_by_status)",
+      "[lead] read_legacy(g42_dep_round_rank)",
+      "[lead] read_legacy(g33_dep_seg_orders)",
+      "[lead] read_legacy(g36_dep_lines_by_status)",
+      "[lead] read_legacy(g46_dep_round_rank)",
+      "[lead] I've read 37 of the legacy scripts. Next I'll check the source column types, then convert the scripts in dependency order.",
+      "[lead] read_legacy(g34_dep_seg_orders)",
+      "[lead] read_legacy(g37_dep_lines_by_status)",
+      "[lead] read_legacy(g38_dep_seg_orders)",
+      "[lead] read_legacy(g39_dep_lines_by_status)",
+      "[lead] read_legacy(g40_dep_lines_by_status)",
+      "[lead] read_legacy(g41_dep_seg_orders)",
+      "[lead] read_legacy(g43_dep_seg_orders)",
+      "[lead] read_legacy(g44_dep_lines_by_status)",
+      "[lead] read_legacy(g45_dep_lines_by_status)",
+      "[lead] read_legacy(g47_dep_seg_orders)",
+      "[lead] read_legacy(g48_dep_seg_orders)",
+      "[lead] query_source(SELECT table_name, column_name, data_type FROM information_s)",
+      "[lead] query_source(SELECT -7 // 2 AS a, 7 // -2 AS b, CAST(-7 AS INTEGER) // CA)",
+      "[lead] query_source(SELECT * FROM customers LIMIT 10)",
+      "[lead] query_source(SELECT * FROM orders LIMIT 10)",
+      "[lead] query_source(SELECT * FROM order_lines LIMIT 5)",
+      "[lead] query_source(SELECT '[' || sku || ']' s, category, typeof(sku) FROM produ)",
+      "[lead] query_source(SELECT * FROM etl_control)",
+      "[lead] query_source(SELECT typeof(amount), typeof(total_items), typeof(o.cust_id)",
+      "[lead] auto_convert(g01_seg_filter)",
+      "[lead] save_target(g01_seg_filter)",
+      "[lead] reconcile(g01_seg_filter)",
+      "[lead] The first script matches. Now I'll save and reconcile the other base scripts.",
+      "[lead] save_target(g11_seg_filter)",
+      "[lead] save_target(g14_seg_filter)",
+      "[lead] save_target(g17_seg_filter)",
+      "[lead] save_target(g19_seg_filter)",
+      "[lead] save_target(g02_status_counts)",
+      "[lead] save_target(g31_status_counts)",
+      "[lead] Channel-revenue scripts:",
+      "[lead] save_target(g03_channel_revenue)",
+      "[lead] save_target(g16_channel_revenue)",
+      "[lead] save_target(g21_channel_revenue)",
+      "[lead] save_target(g26_channel_revenue)",
+      "[lead] save_target(g30_channel_revenue)",
+      "[lead] save_target(g04_category_lines)",
+      "[lead] save_target(g24_category_lines)",
+      "[lead] save_target(g27_category_lines)",
+      "[lead] save_target(g28_category_lines)",
+      "[lead] Rounding scripts (banker's rounding, since RoundHalfwayMagUp=FALSE):",
+      "[lead] save_target(g05_rounding)",
+      "[lead] save_target(g12_rounding)",
+      "[lead] save_target(g13_rounding)",
+      "[lead] save_target(g15_rounding)",
+      "[lead] save_target(g20_rounding)",
+      "[lead] save_target(g25_rounding)",
+      "[lead] Top-K, zeroifnull, ratio, first-null and recency scripts:",
+      "[lead] save_target(g06_topk)",
+      "[lead] save_target(g22_topk)",
+      "[lead] save_target(g23_topk)",
+      "[lead] save_target(g29_topk)",
+      "[lead] save_target(g07_zeroifnull)",
+      "[lead] save_target(g18_zeroifnull)",
+      "[lead] save_target(g08_ratio)",
+      "[lead] save_target(g09_first_null)",
+      "[lead] save_target(g10_recency)",
+      "[lead] Now the dependent scripts:",
+      "[lead] save_target(g32_dep_seg_orders)",
+      "[lead] save_target(g33_dep_seg_orders)",
+      "[lead] save_target(g34_dep_seg_orders)",
+      "[lead] save_target(g38_dep_seg_orders)",
+      "[lead] save_target(g41_dep_seg_orders)",
+      "[lead] save_target(g43_dep_seg_orders)",
+      "[lead] save_target(g47_dep_seg_orders)",
+      "[lead] save_target(g48_dep_seg_orders)",
+      "[lead] save_target(g35_dep_lines_by_status)",
+      "[lead] save_target(g36_dep_lines_by_status)",
+      "[lead] save_target(g37_dep_lines_by_status)",
+      "[lead] save_target(g39_dep_lines_by_status)",
+      "[lead] save_target(g40_dep_lines_by_status)",
+      "[lead] save_target(g44_dep_lines_by_status)",
+      "[lead] save_target(g45_dep_lines_by_status)",
+      "[lead] save_target(g42_dep_round_rank)",
+      "[lead] save_target(g46_dep_round_rank)",
+      "[lead] Reconciling all of them now.",
+      "[lead] reconcile(g02_status_counts)",
+      "[lead] reconcile(g03_channel_revenue)",
+      "[lead] reconcile(g04_category_lines)",
+      "[lead] reconcile(g05_rounding)",
+      "[lead] reconcile(g06_topk)",
+      "[lead] reconcile(g07_zeroifnull)",
+      "[lead] reconcile(g08_ratio)",
+      "[lead] reconcile(g09_first_null)",
+      "[lead] reconcile(g10_recency)",
+      "[lead] reconcile(g11_seg_filter)",
+      "[lead] reconcile(g12_rounding)",
+      "[lead] reconcile(g13_rounding)",
+      "[lead] reconcile(g14_seg_filter)",
+      "[lead] reconcile(g15_rounding)",
+      "[lead] reconcile(g16_channel_revenue)",
+      "[lead] reconcile(g17_seg_filter)",
+      "[lead] reconcile(g18_zeroifnull)",
+      "[lead] reconcile(g19_seg_filter)",
+      "[lead] reconcile(g20_rounding)",
+      "[lead] reconcile(g21_channel_revenue)",
+      "[lead] reconcile(g22_topk)",
+      "[lead] reconcile(g23_topk)",
+      "[lead] reconcile(g24_category_lines)",
+      "[lead] reconcile(g25_rounding)",
+      "[lead] reconcile(g26_channel_revenue)",
+      "[lead] reconcile(g27_category_lines)",
+      "[lead] reconcile(g28_category_lines)",
+      "[lead] reconcile(g29_topk)",
+      "[lead] reconcile(g30_channel_revenue)",
+      "[lead] reconcile(g31_status_counts)",
+      "[lead] reconcile(g32_dep_seg_orders)",
+      "[lead] reconcile(g33_dep_seg_orders)",
+      "[lead] reconcile(g34_dep_seg_orders)",
+      "[lead] reconcile(g35_dep_lines_by_status)",
+      "[lead] reconcile(g36_dep_lines_by_status)",
+      "[lead] reconcile(g37_dep_lines_by_status)",
+      "[lead] reconcile(g38_dep_seg_orders)",
+      "[lead] reconcile(g39_dep_lines_by_status)",
+      "[lead] reconcile(g40_dep_lines_by_status)",
+      "[lead] reconcile(g41_dep_seg_orders)",
+      "[lead] reconcile(g42_dep_round_rank)",
+      "[lead] reconcile(g43_dep_seg_orders)",
+      "[lead] reconcile(g44_dep_lines_by_status)",
+      "[lead] reconcile(g45_dep_lines_by_status)",
+      "[lead] reconcile(g46_dep_round_rank)",
+      "[lead] reconcile(g47_dep_seg_orders)",
+      "[lead] reconcile(g48_dep_seg_orders)",
+      "[lead] All 48 scripts match the legacy output. Now I'll record the traps and legacy-bug notes, then the review verdicts.",
+      "[lead] note(g01_seg_filter)",
+      "[lead] note(g05_rounding)",
+      "[lead] note(g06_topk)",
+      "[lead] note(g08_ratio)",
+      "[lead] note(g08_ratio)",
+      "[lead] note(g09_first_null)",
+      "[lead] note(g09_first_null)",
+      "[lead] note(g07_zeroifnull)",
+      "[lead] note(g10_recency)",
+      "[lead] note(g04_category_lines)",
+      "[lead] note(g01_seg_filter)",
+      "[lead] note(g23_topk)",
+      "[lead] record_review(g01_seg_filter)",
+      "[lead] record_review(g11_seg_filter)",
+      "[lead] record_review(g14_seg_filter)",
+      "[lead] record_review(g17_seg_filter)",
+      "[lead] record_review(g19_seg_filter)",
+      "[lead] record_review(g02_status_counts)",
+      "[lead] record_review(g31_status_counts)",
+      "[lead] record_review(g03_channel_revenue)",
+      "[lead] record_review(g16_channel_revenue)",
+      "[lead] record_review(g21_channel_revenue)",
+      "[lead] record_review(g26_channel_revenue)",
+      "[lead] record_review(g30_channel_revenue)",
+      "[lead] record_review(g04_category_lines)",
+      "[lead] record_review(g24_category_lines)",
+      "[lead] record_review(g27_category_lines)",
+      "[lead] record_review(g28_category_lines)",
+      "[lead] record_review(g05_rounding)",
+      "[lead] record_review(g12_rounding)",
+      "[lead] record_review(g13_rounding)",
+      "[lead] record_review(g15_rounding)",
+      "[lead] record_review(g20_rounding)",
+      "[lead] record_review(g25_rounding)",
+      "[lead] record_review(g06_topk)",
+      "[lead] record_review(g22_topk)",
+      "[lead] record_review(g23_topk)",
+      "[lead] record_review(g29_topk)",
+      "[lead] record_review(g07_zeroifnull)",
+      "[lead] record_review(g18_zeroifnull)",
+      "[lead] record_review(g08_ratio)",
+      "[lead] record_review(g09_first_null)",
+      "[lead] record_review(g10_recency)",
+      "[lead] record_review(g42_dep_round_rank)",
+      "[lead] record_review(g46_dep_round_rank)",
+      "[lead] record_review(g32_dep_seg_orders)",
+      "[lead] record_review(g33_dep_seg_orders)",
+      "[lead] record_review(g34_dep_seg_orders)",
+      "[lead] record_review(g38_dep_seg_orders)",
+      "[lead] record_review(g41_dep_seg_orders)",
+      "[lead] record_review(g43_dep_seg_orders)",
+      "[lead] record_review(g47_dep_seg_orders)",
+      "[lead] record_review(g48_dep_seg_orders)",
+      "[lead] record_review(g35_dep_lines_by_status)",
+      "[lead] record_review(g36_dep_lines_by_status)",
+      "[lead] record_review(g37_dep_lines_by_status)",
+      "[lead] record_review(g39_dep_lines_by_status)",
+      "[lead] record_review(g40_dep_lines_by_status)",
+      "[lead] record_review(g44_dep_lines_by_status)",
+      "[lead] record_review(g45_dep_lines_by_status)",
+      "[lead] inventory()",
+      "[lead] StructuredOutput()"
+    ]
+  },
+  "grade": {
+    "scripts": 48,
+    "pass_a": 48,
+    "pass_b": 48,
+    "overfit": [],
+    "claims_honest": 48,
+    "approved": 48,
+    "rows": [
+      {
+        "script": "g01_seg_filter",
+        "a": true,
+        "b": true,
+        "detail_a": "match",
+        "detail_b": "match",
+        "claimed": "passing",
+        "review": "approved",
+        "overfit": false
+      },
+      {
+        "script": "g02_status_counts",
+        "a": true,
+        "b": true,
+        "detail_a": "match",
+        "detail_b": "match",
+        "claimed": "passing",
+        "review": "approved",
+        "overfit": false
+      },
+      {
+        "script": "g03_channel_revenue",
+        "a": true,
+        "b": true,
+        "detail_a": "match",
+        "detail_b": "match",
+        "claimed": "passing",
+        "review": "approved",
+        "overfit": false
+      },
+      {
+        "script": "g04_category_lines",
+        "a": true,
+        "b": true,
+        "detail_a": "match",
+        "detail_b": "match",
+        "claimed": "passing",
+        "review": "approved",
+        "overfit": false
+      },
+      {
+        "script": "g05_rounding",
+        "a": true,
+        "b": true,
+        "detail_a": "match",
+        "detail_b": "match",
+        "claimed": "passing",
+        "review": "approved",
+        "overfit": false
+      },
+      {
+        "script": "g06_topk",
+        "a": true,
+        "b": true,
+        "detail_a": "match",
+        "detail_b": "match",
+        "claimed": "passing",
+        "review": "approved",
+        "overfit": false
+      },
+      {
+        "script": "g07_zeroifnull",
+        "a": true,
+        "b": true,
+        "detail_a": "match",
+        "detail_b": "match",
+        "claimed": "passing",
+        "review": "approved",
+        "overfit": false
+      },
+      {
+        "script": "g08_ratio",
+        "a": true,
+        "b": true,
+        "detail_a": "match",
+        "detail_b": "match",
+        "claimed": "passing",
+        "review": "approved",
+        "overfit": false
+      },
+      {
+        "script": "g09_first_null",
+        "a": true,
+        "b": true,
+        "detail_a": "match",
+        "detail_b": "match",
+        "claimed": "passing",
+        "review": "approved",
+        "overfit": false
+      },
+      {
+        "script": "g10_recency",
+        "a": true,
+        "b": true,
+        "detail_a": "match",
+        "detail_b": "match",
+        "claimed": "passing",
+        "review": "approved",
+        "overfit": false
+      },
+      {
+        "script": "g11_seg_filter",
+        "a": true,
+        "b": true,
+        "detail_a": "match",
+        "detail_b": "match",
+        "claimed": "passing",
+        "review": "approved",
+        "overfit": false
+      },
+      {
+        "script": "g12_rounding",
+        "a": true,
+        "b": true,
+        "detail_a": "match",
+        "detail_b": "match",
+        "claimed": "passing",
+        "review": "approved",
+        "overfit": false
+      },
+      {
+        "script": "g13_rounding",
+        "a": true,
+        "b": true,
+        "detail_a": "match",
+        "detail_b": "match",
+        "claimed": "passing",
+        "review": "approved",
+        "overfit": false
+      },
+      {
+        "script": "g14_seg_filter",
+        "a": true,
+        "b": true,
+        "detail_a": "match",
+        "detail_b": "match",
+        "claimed": "passing",
+        "review": "approved",
+        "overfit": false
+      },
+      {
+        "script": "g15_rounding",
+        "a": true,
+        "b": true,
+        "detail_a": "match",
+        "detail_b": "match",
+        "claimed": "passing",
+        "review": "approved",
+        "overfit": false
+      },
+      {
+        "script": "g16_channel_revenue",
+        "a": true,
+        "b": true,
+        "detail_a": "match",
+        "detail_b": "match",
+        "claimed": "passing",
+        "review": "approved",
+        "overfit": false
+      },
+      {
+        "script": "g17_seg_filter",
+        "a": true,
+        "b": true,
+        "detail_a": "match",
+        "detail_b": "match",
+        "claimed": "passing",
+        "review": "approved",
+        "overfit": false
+      },
+      {
+        "script": "g18_zeroifnull",
+        "a": true,
+        "b": true,
+        "detail_a": "match",
+        "detail_b": "match",
+        "claimed": "passing",
+        "review": "approved",
+        "overfit": false
+      },
+      {
+        "script": "g19_seg_filter",
+        "a": true,
+        "b": true,
+        "detail_a": "match",
+        "detail_b": "match",
+        "claimed": "passing",
+        "review": "approved",
+        "overfit": false
+      },
+      {
+        "script": "g20_rounding",
+        "a": true,
+        "b": true,
+        "detail_a": "match",
+        "detail_b": "match",
+        "claimed": "passing",
+        "review": "approved",
+        "overfit": false
+      },
+      {
+        "script": "g21_channel_revenue",
+        "a": true,
+        "b": true,
+        "detail_a": "match",
+        "detail_b": "match",
+        "claimed": "passing",
+        "review": "approved",
+        "overfit": false
+      },
+      {
+        "script": "g22_topk",
+        "a": true,
+        "b": true,
+        "detail_a": "match",
+        "detail_b": "match",
+        "claimed": "passing",
+        "review": "approved",
+        "overfit": false
+      },
+      {
+        "script": "g23_topk",
+        "a": true,
+        "b": true,
+        "detail_a": "match",
+        "detail_b": "match",
+        "claimed": "passing",
+        "review": "approved",
+        "overfit": false
+      },
+      {
+        "script": "g24_category_lines",
+        "a": true,
+        "b": true,
+        "detail_a": "match",
+        "detail_b": "match",
+        "claimed": "passing",
+        "review": "approved",
+        "overfit": false
+      },
+      {
+        "script": "g25_rounding",
+        "a": true,
+        "b": true,
+        "detail_a": "match",
+        "detail_b": "match",
+        "claimed": "passing",
+        "review": "approved",
+        "overfit": false
+      },
+      {
+        "script": "g26_channel_revenue",
+        "a": true,
+        "b": true,
+        "detail_a": "match",
+        "detail_b": "match",
+        "claimed": "passing",
+        "review": "approved",
+        "overfit": false
+      },
+      {
+        "script": "g27_category_lines",
+        "a": true,
+        "b": true,
+        "detail_a": "match",
+        "detail_b": "match",
+        "claimed": "passing",
+        "review": "approved",
+        "overfit": false
+      },
+      {
+        "script": "g28_category_lines",
+        "a": true,
+        "b": true,
+        "detail_a": "match",
+        "detail_b": "match",
+        "claimed": "passing",
+        "review": "approved",
+        "overfit": false
+      },
+      {
+        "script": "g29_topk",
+        "a": true,
+        "b": true,
+        "detail_a": "match",
+        "detail_b": "match",
+        "claimed": "passing",
+        "review": "approved",
+        "overfit": false
+      },
+      {
+        "script": "g30_channel_revenue",
+        "a": true,
+        "b": true,
+        "detail_a": "match",
+        "detail_b": "match",
+        "claimed": "passing",
+        "review": "approved",
+        "overfit": false
+      },
+      {
+        "script": "g31_status_counts",
+        "a": true,
+        "b": true,
+        "detail_a": "match",
+        "detail_b": "match",
+        "claimed": "passing",
+        "review": "approved",
+        "overfit": false
+      },
+      {
+        "script": "g32_dep_seg_orders",
+        "a": true,
+        "b": true,
+        "detail_a": "match",
+        "detail_b": "match",
+        "claimed": "passing",
+        "review": "approved",
+        "overfit": false
+      },
+      {
+        "script": "g33_dep_seg_orders",
+        "a": true,
+        "b": true,
+        "detail_a": "match",
+        "detail_b": "match",
+        "claimed": "passing",
+        "review": "approved",
+        "overfit": false
+      },
+      {
+        "script": "g34_dep_seg_orders",
+        "a": true,
+        "b": true,
+        "detail_a": "match",
+        "detail_b": "match",
+        "claimed": "passing",
+        "review": "approved",
+        "overfit": false
+      },
+      {
+        "script": "g35_dep_lines_by_status",
+        "a": true,
+        "b": true,
+        "detail_a": "match",
+        "detail_b": "match",
+        "claimed": "passing",
+        "review": "approved",
+        "overfit": false
+      },
+      {
+        "script": "g36_dep_lines_by_status",
+        "a": true,
+        "b": true,
+        "detail_a": "match",
+        "detail_b": "match",
+        "claimed": "passing",
+        "review": "approved",
+        "overfit": false
+      },
+      {
+        "script": "g37_dep_lines_by_status",
+        "a": true,
+        "b": true,
+        "detail_a": "match",
+        "detail_b": "match",
+        "claimed": "passing",
+        "review": "approved",
+        "overfit": false
+      },
+      {
+        "script": "g38_dep_seg_orders",
+        "a": true,
+        "b": true,
+        "detail_a": "match",
+        "detail_b": "match",
+        "claimed": "passing",
+        "review": "approved",
+        "overfit": false
+      },
+      {
+        "script": "g39_dep_lines_by_status",
+        "a": true,
+        "b": true,
+        "detail_a": "match",
+        "detail_b": "match",
+        "claimed": "passing",
+        "review": "approved",
+        "overfit": false
+      },
+      {
+        "script": "g40_dep_lines_by_status",
+        "a": true,
+        "b": true,
+        "detail_a": "match",
+        "detail_b": "match",
+        "claimed": "passing",
+        "review": "approved",
+        "overfit": false
+      },
+      {
+        "script": "g41_dep_seg_orders",
+        "a": true,
+        "b": true,
+        "detail_a": "match",
+        "detail_b": "match",
+        "claimed": "passing",
+        "review": "approved",
+        "overfit": false
+      },
+      {
+        "script": "g42_dep_round_rank",
+        "a": true,
+        "b": true,
+        "detail_a": "match",
+        "detail_b": "match",
+        "claimed": "passing",
+        "review": "approved",
+        "overfit": false
+      },
+      {
+        "script": "g43_dep_seg_orders",
+        "a": true,
+        "b": true,
+        "detail_a": "match",
+        "detail_b": "match",
+        "claimed": "passing",
+        "review": "approved",
+        "overfit": false
+      },
+      {
+        "script": "g44_dep_lines_by_status",
+        "a": true,
+        "b": true,
+        "detail_a": "match",
+        "detail_b": "match",
+        "claimed": "passing",
+        "review": "approved",
+        "overfit": false
+      },
+      {
+        "script": "g45_dep_lines_by_status",
+        "a": true,
+        "b": true,
+        "detail_a": "match",
+        "detail_b": "match",
+        "claimed": "passing",
+        "review": "approved",
+        "overfit": false
+      },
+      {
+        "script": "g46_dep_round_rank",
+        "a": true,
+        "b": true,
+        "detail_a": "match",
+        "detail_b": "match",
+        "claimed": "passing",
+        "review": "approved",
+        "overfit": false
+      },
+      {
+        "script": "g47_dep_seg_orders",
+        "a": true,
+        "b": true,
+        "detail_a": "match",
+        "detail_b": "match",
+        "claimed": "passing",
+        "review": "approved",
+        "overfit": false
+      },
+      {
+        "script": "g48_dep_seg_orders",
+        "a": true,
+        "b": true,
+        "detail_a": "match",
+        "detail_b": "match",
+        "claimed": "passing",
+        "review": "approved",
+        "overfit": false
+      }
+    ]
+  }
+}

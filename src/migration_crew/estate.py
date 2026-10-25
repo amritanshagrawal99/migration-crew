@@ -10,6 +10,8 @@ value (so DECIMAL 3 and BIGINT 3 match) and rows independent of order.
 """
 from __future__ import annotations
 
+import functools
+import os
 import re
 from dataclasses import dataclass, field
 from decimal import Decimal
@@ -18,8 +20,20 @@ from pathlib import Path
 import duckdb
 
 ROOT = Path(__file__).resolve().parents[2]
-ESTATE = ROOT / "estate"
-LEGACY = ESTATE / "legacy"
+
+
+def estate_dir() -> Path:
+    """The estate the crew works on: legacy/ + data_a.duckdb + golden_a.duckdb (MIGRATION_CREW_ESTATE)."""
+    return Path(os.environ.get("MIGRATION_CREW_ESTATE", ROOT / "estate")).resolve()
+
+
+def grading_dir() -> Path:
+    """Hidden grading data for that estate, next to it: ../grading/{data_b,golden_b}.duckdb + reference/."""
+    return estate_dir().parent / "grading"
+
+
+def legacy_dir() -> Path:
+    return estate_dir() / "legacy"
 
 
 @dataclass
@@ -32,10 +46,15 @@ class Script:
 
 
 def scripts() -> dict[str, Script]:
+    return dict(_scripts(str(legacy_dir())))
+
+
+@functools.lru_cache(maxsize=8)
+def _scripts(legacy: str) -> tuple:
     import sqlglot
     from sqlglot import exp
     raw = {}
-    for p in sorted(LEGACY.glob("s*.sql")):
+    for p in sorted(Path(legacy).glob("*.sql")):
         text = p.read_text()
         out = re.search(r"--\s*OUTPUT:\s*(\w+)", text).group(1)
         key = [k.strip() for k in re.search(r"--\s*KEY:\s*(.+)", text).group(1).split(",")]
@@ -50,7 +69,7 @@ def scripts() -> dict[str, Script]:
     for name, (out, key, tables) in raw.items():
         reads = sorted(t for t in tables if t != out and t not in temps)
         res[name] = Script(name, out, key, reads, sorted(outputs[t] for t in reads if t in outputs and outputs[t] != name))
-    return res
+    return tuple(res.items())
 
 
 def chain(name: str, all_scripts: dict[str, Script] | None = None) -> list[str]:

@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import os
 import sys
 import time
 from pathlib import Path
@@ -15,8 +16,18 @@ def _table(g: dict) -> str:
         out.append(f"{r['script']} | {'PASS' if r['a'] else 'fail: ' + r['detail_a']} | "
                    f"{'PASS' if r['b'] else 'fail: ' + r['detail_b']} | {r['claimed'] or '-'} | {r['review'] or '-'}")
     out.append(f"\npassing on A {g['pass_a']}/{g['scripts']}, on unseen B {g['pass_b']}/{g['scripts']}, overfit {g['overfit'] or 'none'}, "
-               f"report claims correct {g['claims_honest']}/{g['scripts']}, approved {g['approved']}")
+               f"report claims correct {g['claims_honest']}/{g['scripts']}, approved {g['approved']} (DuckDB {g['duckdb']})")
     return "\n".join(out)
+
+
+def _use_estate(path: str | Path | None, workspace: str | Path | None = None) -> None:
+    """Point the run at an estate: --estate DIR (DIR or DIR/estate), else the one the workspace was made on."""
+    from .estate import ROOT
+    if path is None and workspace is not None and (Path(workspace) / "estate.txt").exists():
+        path = ROOT / (Path(workspace) / "estate.txt").read_text().strip()     # relative to the repo, or absolute
+    if path is not None:
+        p = Path(path).resolve()
+        os.environ["MIGRATION_CREW_ESTATE"] = str(p / "estate" if (p / "estate").is_dir() else p)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -29,15 +40,30 @@ def main(argv: list[str] | None = None) -> int:
     r.add_argument("--effort", default="medium", choices=["low", "medium", "high", "xhigh", "max"])
     r.add_argument("--budget", type=float, default=25.0, help="spend cap in USD for the whole run")
     r.add_argument("--quiet", action="store_true")
+    r.add_argument("--estate", help="a generated estate directory (default: the hand-written 9-script estate)")
     g = sub.add_parser("grade", help="grade a finished workspace")
     g.add_argument("workspace")
     t = sub.add_parser("tool", help="call one crew tool directly (no model)")
     t.add_argument("workspace")
     t.add_argument("name")
     t.add_argument("args", nargs="?", default="{}")
+    n = sub.add_parser("generate", help="generate a larger estate from templates (legacy SQL, reference, both datasets)")
+    n.add_argument("--scripts", type=int, required=True)
+    n.add_argument("--seed", type=int, default=7)
+    n.add_argument("--out", required=True)
     a = p.parse_args(argv)
     sys.stdout.reconfigure(encoding="utf-8")
 
+    if a.cmd == "generate":
+        from .generator import write
+        m = write(Path(a.out), a.scripts, a.seed)
+        fams = {}
+        for f in m["families"].values():
+            fams[f] = fams.get(f, 0) + 1
+        print(f"{a.scripts} scripts in {a.out}: " + ", ".join(f"{k} {v}" for k, v in sorted(fams.items())))
+        return 0
+
+    _use_estate(getattr(a, "estate", None), a.workspace)
     if a.cmd == "tool":
         from .tools import Workspace, call
         text, err = call(Workspace(Path(a.workspace)), a.name, json.loads(a.args))
@@ -47,7 +73,7 @@ def main(argv: list[str] | None = None) -> int:
     from .grading import grade
     if a.cmd == "grade":
         report_file = Path(a.workspace) / "result.json"
-        report = json.loads(report_file.read_text())["report"] if report_file.exists() else None
+        report = json.loads(report_file.read_text())["run"]["report"] if report_file.exists() else None
         print(_table(grade(a.workspace, report)))
         return 0
 

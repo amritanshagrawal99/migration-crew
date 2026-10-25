@@ -15,9 +15,11 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from .estate import scripts
 from .tools import TOOLS, Workspace, call
 
 MODEL = "claude-opus-5-5"
+MAX_PARALLEL = 4            # subagents running at once (CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS); extra calls are rejected
 
 REPORT_SCHEMA = {
     "type": "object",
@@ -65,11 +67,12 @@ data really is. Record your verdict with record_review, with comments a converte
 LEAD_PROMPT = f"""You lead the migration of a Teradata ETL estate to DuckDB. Start with inventory and \
 platform_notes. Convert scripts in dependency order: a script can only be reconciled once its dependencies are \
 saved. Delegate each script to a converter subagent with a self-contained brief (the script name, its dependencies, \
-and any traps already found in related scripts); run independent scripts in parallel and wait for their reports. \
+and any traps already found in related scripts). Run independent scripts in parallel, in waves of at most \
+{MAX_PARALLEL} delegations per message (more are rejected), and wait for each wave's reports before the next. \
 Verify every claimed pass yourself with reconcile. Send each passing script to the reviewer; if it requests \
 changes, give the converter the comments and have it fix and re-reconcile. Finish when every script passes and is \
-approved, or when you cannot make progress. {SEMANTICS} The report must reflect the real status from inventory, not \
-what the subagents claimed."""
+approved, or when you cannot make progress: keep delegating while scripts remain, however many there are. \
+{SEMANTICS} The report must reflect the real status from inventory, not what the subagents claimed."""
 
 SOLO_PROMPT = f"""You migrate a Teradata ETL estate to DuckDB on your own. Start with inventory and platform_notes, \
 then convert every script in dependency order: read it, draft with auto_convert, save, reconcile against the legacy \
@@ -126,10 +129,14 @@ def options(ws: Workspace, mode: str, counter: dict, model: str, budget_usd: flo
                   output_format={"type": "json_schema", "schema": REPORT_SCHEMA}, setting_sources=[],
                   cwd=str(ws.root), max_budget_usd=budget_usd,
                   env={"CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH": "1", "CLAUDE_AGENT_SDK_DISABLE_BUILTIN_AGENTS": "1",
-                       "CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS": "4"})
+                       "CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS": str(MAX_PARALLEL)})
+    n = len(scripts())                              # turn caps grow with the estate
     if mode == "solo":
         return ClaudeAgentOptions(system_prompt=SOLO_PROMPT, tools=[], allowed_tools=_mcp(SOLO_TOOLS),
-                                  max_turns=250, **common)
+                                  max_turns=max(250, 10 * n), **common)
+    # Delegations over the concurrency cap are rejected ("do not retry"); a lead that fires 10 at once ends its turn
+    # with work outstanding and, with a required structured report, can end the run (seen at 48 scripts: 8 converted,
+    # 40 never started). The lead now delegates in waves of MAX_PARALLEL; finished subagents re-invoke it.
     return ClaudeAgentOptions(
         system_prompt=LEAD_PROMPT, tools=["Agent"],
         # permission is session-wide: every tool any subagent uses must be approved here
@@ -137,11 +144,13 @@ def options(ws: Workspace, mode: str, counter: dict, model: str, budget_usd: flo
         disallowed_tools=["Agent(fork)", "Agent(general-purpose)"],
         agents={
             "converter": AgentDefinition(description="Migrates ONE legacy Teradata script to DuckDB until it reconciles.",
-                                         prompt=CONVERTER_PROMPT, tools=_mcp(CONVERTER_TOOLS), model="inherit", maxTurns=60),
+                                         prompt=CONVERTER_PROMPT, tools=_mcp(CONVERTER_TOOLS), model="inherit", maxTurns=60,
+                                         background=False),
             "reviewer": AgentDefinition(description="Reviews a passing conversion for generality before sign-off.",
-                                        prompt=REVIEWER_PROMPT, tools=_mcp(REVIEWER_TOOLS), model="inherit", maxTurns=30),
+                                        prompt=REVIEWER_PROMPT, tools=_mcp(REVIEWER_TOOLS), model="inherit", maxTurns=30,
+                                        background=False),
         },
-        max_turns=150, **common)
+        max_turns=max(150, 6 * n), **common)
 
 
 async def migrate(workspace: str | Path, mode: str = "crew", model: str = MODEL, budget_usd: float = 25.0,

@@ -1,0 +1,763 @@
+{
+  "run": {
+    "mode": "crew",
+    "workspace": "runs\\n48-crew",
+    "report": {
+      "summary": "The migration is still partway through. 8 of the 48 scripts pass reconcile. I re-ran reconcile myself on g01\u2013g04, and all four match the legacy output exactly. For g07\u2013g10 the converters reported a match from their own reconcile runs, but I have not re-run those four myself. None of the scripts has been code-reviewed. The other 40 scripts have not been started: g05, g06, g11\u2013g31 and the dependent scripts g32\u2013g48. One suspected legacy bug was found, in g09: an unshipped order is picked as the customer's first order in fulfilment order. The migrated job keeps that behaviour and it is recorded as a legacy bug. The general rules from the platform notes were applied to every comparison:\n- String comparisons ignore case and trailing spaces.\n- CAST to DECIMAL and ROUND use round-half-even.\n- Integer division truncates toward zero.\n- TOP n WITH TIES becomes RANK() <= n.\n- NULLs sort first in ASC and last in DESC.\n- ZEROIFNULL becomes COALESCE.",
+      "scripts": [
+        {
+          "script": "g01_seg_filter",
+          "status": "passing",
+          "review": "not_reviewed",
+          "traps": [
+            "the segment comparison ignores case and trailing spaces in session mode, so both sides are wrapped in lower(rtrim())",
+            "TRIM is written as trim(x, ' ') so it removes only spaces"
+          ],
+          "suspected_legacy_bugs": []
+        },
+        {
+          "script": "g02_status_counts",
+          "status": "passing",
+          "review": "not_reviewed",
+          "traps": [
+            "status IN (...) ignores case and trailing spaces, so the column and the literals are both wrapped in lower(rtrim())"
+          ],
+          "suspected_legacy_bugs": []
+        },
+        {
+          "script": "g03_channel_revenue",
+          "status": "passing",
+          "review": "not_reviewed",
+          "traps": [
+            "the channel comparison ignores case and trailing spaces, so it uses lower(rtrim())",
+            "explicit casts make the output types match the legacy table"
+          ],
+          "suspected_legacy_bugs": []
+        },
+        {
+          "script": "g04_category_lines",
+          "status": "passing",
+          "review": "not_reviewed",
+          "traps": [
+            "the sku join (a CHAR(10) column) ignores case and trailing spaces, so both sides are wrapped in lower(rtrim())",
+            "the category comparison uses lower(rtrim())"
+          ],
+          "suspected_legacy_bugs": []
+        },
+        {
+          "script": "g05_rounding",
+          "status": "not_converted",
+          "review": "not_reviewed",
+          "traps": [
+            "CAST to DECIMAL(14,1) needs round-half-even"
+          ]
+        },
+        {
+          "script": "g06_topk",
+          "status": "not_converted",
+          "review": "not_reviewed",
+          "traps": [
+            "TOP 5 WITH TIES needs RANK() <= 5"
+          ]
+        },
+        {
+          "script": "g07_zeroifnull",
+          "status": "passing",
+          "review": "not_reviewed",
+          "traps": [
+            "ZEROIFNULL becomes COALESCE(x, 0) in both places it is used; the converter's reconcile reported a match, not yet re-run by me"
+          ],
+          "suspected_legacy_bugs": []
+        },
+        {
+          "script": "g08_ratio",
+          "status": "passing",
+          "review": "not_reviewed",
+          "traps": [
+            "integer division uses //, which truncates toward zero; the converter's reconcile reported a match, not yet re-run by me"
+          ],
+          "suspected_legacy_bugs": []
+        },
+        {
+          "script": "g09_first_null",
+          "status": "passing",
+          "review": "not_reviewed",
+          "traps": [
+            "NULLS FIRST is made explicit in the window ORDER BY to match Teradata's ASC ordering; the converter's reconcile reported a match, not yet re-run by me"
+          ],
+          "suspected_legacy_bugs": [
+            "An unshipped order (NULL ship_date) is picked as the first order in fulfilment order, for 117 of 266 customers on dataset A. Reproduced for parity."
+          ]
+        },
+        {
+          "script": "g10_recency",
+          "status": "passing",
+          "review": "not_reviewed",
+          "traps": [
+            "DATE - DATE gives a whole number of days on both platforms; explicit casts make the output types match; the converter's reconcile reported a match, not yet re-run by me"
+          ],
+          "suspected_legacy_bugs": []
+        }
+      ],
+      "risks": [
+        "40 scripts have not been started. The dependent scripts g32\u2013g48 cannot be reconciled until the scripts they depend on are saved.",
+        "g07\u2013g10 have only the converters' own reconcile results; I have not re-run them.",
+        "None of the conversions has been code-reviewed.",
+        "g10 cross-joins etl_control. If that table ever holds more than one row, cust_id will no longer be unique. The legacy job behaves the same way.",
+        "Only 4 subagents can run at once, which slows the remaining work."
+      ]
+    },
+    "error": null,
+    "turns": 3,
+    "cost_usd": 1.1648504000000002,
+    "seconds": 152.8,
+    "tool_calls": {
+      "inventory": 1,
+      "platform_notes": 9,
+      "read_legacy": 21,
+      "auto_convert": 8,
+      "query_legacy_output": 16,
+      "query_source": 18,
+      "save_target": 8,
+      "reconcile": 12,
+      "note": 10
+    },
+    "delegations": [
+      "converter: Convert legacy Teradata script `g01_seg_filter` to DuckDB, save it, and reconcile it until it passes. It has no dependen",
+      "converter: Convert legacy Teradata script `g02_status_counts` to DuckDB, save it, and reconcile it until it passes. It has no depen",
+      "converter: Convert legacy Teradata script `g03_channel_revenue` to DuckDB, save it, and reconcile it until it passes. It has no dep",
+      "converter: Convert legacy Teradata script `g04_category_lines` to DuckDB, save it, and reconcile it until it passes. It has no depe",
+      "converter: Convert legacy Teradata script `g05_rounding` to DuckDB, save it, and reconcile it until it passes. It has no dependenci",
+      "converter: Convert legacy Teradata script `g06_topk` to DuckDB, save it, and reconcile it until it passes. It has no dependencies. ",
+      "converter: Convert legacy Teradata script `g07_zeroifnull` to DuckDB, save it, and reconcile it until it passes. It has no dependen",
+      "converter: Convert legacy Teradata script `g08_ratio` to DuckDB, save it, and reconcile it until it passes. It has no dependencies.",
+      "converter: Convert legacy Teradata script `g09_first_null` to DuckDB, save it, and reconcile it until it passes. It has no dependen",
+      "converter: Convert legacy Teradata script `g10_recency` to DuckDB, save it, and reconcile it until it passes. It has no dependencie"
+    ],
+    "transcript": [
+      "[lead] inventory()",
+      "[lead] platform_notes()",
+      "[lead] read_legacy(g01_seg_filter)",
+      "[lead] read_legacy(g05_rounding)",
+      "[lead] read_legacy(g06_topk)",
+      "[lead] read_legacy(g08_ratio)",
+      "[lead] read_legacy(g09_first_null)",
+      "[lead] read_legacy(g10_recency)",
+      "[lead] read_legacy(g02_status_counts)",
+      "[lead] read_legacy(g03_channel_revenue)",
+      "[lead] read_legacy(g04_category_lines)",
+      "[lead] read_legacy(g07_zeroifnull)",
+      "[lead] read_legacy(g32_dep_seg_orders)",
+      "[lead] read_legacy(g35_dep_lines_by_status)",
+      "[lead] read_legacy(g42_dep_round_rank)",
+      "[lead] -> converter: Convert legacy Teradata script `g01_seg_filter` to DuckDB, save it, and reconcile it until it passes. It has no dependen",
+      "[sub] read_legacy(g01_seg_filter)",
+      "[sub] platform_notes()",
+      "[sub] auto_convert(g01_seg_filter)",
+      "[lead] -> converter: Convert legacy Teradata script `g02_status_counts` to DuckDB, save it, and reconcile it until it passes. It has no depen",
+      "[sub] query_legacy_output(SELECT column_name, data_type FROM information_schema.column)",
+      "[sub] query_source(SELECT column_name, data_type FROM information_schema.column)",
+      "[sub] read_legacy(g02_status_counts)",
+      "[sub] platform_notes()",
+      "[sub] query_legacy_output(SELECT typeof(cust_id), typeof(cust_code), typeof(signup_dat)",
+      "[sub] auto_convert(g02_status_counts)",
+      "[sub] query_source(SELECT segment, typeof(cust_id), typeof(cust_code), typeof(s)",
+      "[lead] -> converter: Convert legacy Teradata script `g03_channel_revenue` to DuckDB, save it, and reconcile it until it passes. It has no dep",
+      "[sub] query_legacy_output(SELECT column_name, data_type FROM information_schema.column)",
+      "[sub] query_source(SELECT column_name, data_type FROM information_schema.column)",
+      "[sub] save_target(g01_seg_filter)",
+      "[sub] reconcile(g01_seg_filter)",
+      "[sub] query_legacy_output(SELECT typeof(cust_id), typeof(order_cnt), typeof(match_cnt))",
+      "[sub] read_legacy(g03_channel_revenue)",
+      "[sub] platform_notes()",
+      "[sub] query_source(SELECT typeof(cust_id), typeof(status), status, count(*) FRO)",
+      "[sub] auto_convert(g03_channel_revenue)",
+      "[lead] -> converter: Convert legacy Teradata script `g04_category_lines` to DuckDB, save it, and reconcile it until it passes. It has no depe",
+      "[sub] note(g01_seg_filter)",
+      "[sub] read_legacy(g04_category_lines)",
+      "[sub] platform_notes()",
+      "[sub] save_target(g02_status_counts)",
+      "[sub] Checking column types.",
+      "[sub] auto_convert(g04_category_lines)",
+      "[sub] query_legacy_output(SELECT column_name, data_type FROM information_schema.column)",
+      "[sub] note(g01_seg_filter)",
+      "[sub] query_source(SELECT column_name, data_type FROM information_schema.column)",
+      "[sub] reconcile(g02_status_counts)",
+      "[sub] Let me check types.",
+      "[lead] -> converter: Convert legacy Teradata script `g05_rounding` to DuckDB, save it, and reconcile it until it passes. It has no dependenci",
+      "[sub] query_legacy_output(SELECT column_name, data_type FROM information_schema.column)",
+      "[sub] query_source(SELECT table_name, column_name, data_type FROM information_s)",
+      "[sub] query_legacy_output(SELECT typeof(cust_id), typeof(revenue), typeof(order_cnt), )",
+      "[sub] query_source(SELECT typeof(cust_id), typeof(amount), typeof(channel), '[')",
+      "[sub] note(g02_status_counts)",
+      "[sub] query_legacy_output(SELECT typeof(order_id), typeof(line_no), typeof(qty), typeo)",
+      "[sub] query_source(SELECT typeof(ol.qty), typeof(ol.unit_price), typeof(ol.sku))",
+      "[sub] save_target(g03_channel_revenue)",
+      "[lead] -> converter: Convert legacy Teradata script `g06_topk` to DuckDB, save it, and reconcile it until it passes. It has no dependencies. ",
+      "[sub] I've converted `g01_seg_filter` and saved it, and reconcile reports **MATCH**: `seg_silver_01` reproduces the legacy output exactly (99 rows).\n\nThe saved DuckDB SQL (version 1):\n```sql\nCREATE TABLE se",
+      "[sub] save_target(g04_category_lines)",
+      "[sub] reconcile(g03_channel_revenue)",
+      "[sub] `g02_status_counts` is converted and saved, and reconcile returned **MATCH**: `status_counts_02` reproduces the legacy output exactly, all 266 rows.\n\n**Trap handled (recorded as a trap note):** In Ter",
+      "[sub] note(g04_category_lines)",
+      "[sub] reconcile(g04_category_lines)",
+      "[lead] -> converter: Convert legacy Teradata script `g07_zeroifnull` to DuckDB, save it, and reconcile it until it passes. It has no dependen",
+      "[sub] note(g03_channel_revenue)",
+      "[sub] read_legacy(g07_zeroifnull)",
+      "[sub] platform_notes()",
+      "[sub] `g04_category_lines` passed reconcile on the first saved version: `category_lines_04` matches the legacy output exactly, 563 rows.\n\n**Trap handled (recorded as a trap note):** In session mode, string ",
+      "[sub] auto_convert(g07_zeroifnull)",
+      "[lead] -> converter: Convert legacy Teradata script `g08_ratio` to DuckDB, save it, and reconcile it until it passes. It has no dependencies.",
+      "[sub] **Status: MATCH.** The DuckDB version of `g03_channel_revenue` builds `channel_revenue_03` and reproduces the legacy output exactly (181 rows).\n\n**Trap handled (recorded as a trap note):**\n- **Channel",
+      "[sub] Let me check types.",
+      "[sub] query_legacy_output(SELECT column_name, data_type FROM information_schema.column)",
+      "[sub] query_source(SELECT column_name, data_type FROM information_schema.column)",
+      "[sub] read_legacy(g08_ratio)",
+      "[sub] platform_notes()",
+      "[sub] auto_convert(g08_ratio)",
+      "[sub] query_legacy_output(SELECT typeof(cust_id), typeof(credit_limit), typeof(band), )",
+      "[lead] -> converter: Convert legacy Teradata script `g09_first_null` to DuckDB, save it, and reconcile it until it passes. It has no dependen",
+      "[sub] query_source(SELECT typeof(cust_id), typeof(credit_limit), count(*), coun)",
+      "[sub] query_legacy_output(SELECT column_name, data_type FROM information_schema.column)",
+      "[sub] query_source(SELECT column_name, data_type FROM information_schema.column)",
+      "[sub] read_legacy(g09_first_null)",
+      "[sub] platform_notes()",
+      "[sub] auto_convert(g09_first_null)",
+      "[sub] save_target(g07_zeroifnull)",
+      "[sub] reconcile(g07_zeroifnull)",
+      "[sub] query_legacy_output(SELECT typeof(cust_id) t1, typeof(items_per_order) t2, * FRO)",
+      "[sub] query_source(SELECT typeof(cust_id) t1, typeof(total_items) t2, count(*) )",
+      "[lead] -> converter: Convert legacy Teradata script `g10_recency` to DuckDB, save it, and reconcile it until it passes. It has no dependencie",
+      "[sub] query_source(SELECT column_name, data_type FROM information_schema.column)",
+      "[sub] query_legacy_output(SELECT column_name, data_type FROM information_schema.column)",
+      "[sub] read_legacy(g10_recency)",
+      "[sub] platform_notes()",
+      "[sub] note(g07_zeroifnull)",
+      "[sub] auto_convert(g10_recency)",
+      "[sub] query_source(SELECT typeof(cust_id) t1, typeof(order_id) t2, typeof(ship_)",
+      "[lead] reconcile(g01_seg_filter)",
+      "[lead] reconcile(g02_status_counts)",
+      "[sub] query_legacy_output(SELECT typeof(cust_id) t1, typeof(order_id) t2, typeof(ship_)",
+      "[lead] reconcile(g03_channel_revenue)",
+      "[lead] reconcile(g04_category_lines)",
+      "[sub] save_target(g08_ratio)",
+      "[sub] query_source(SELECT column_name, data_type, table_name FROM information_s)",
+      "[sub] query_legacy_output(SELECT column_name, data_type FROM information_schema.column)",
+      "[sub] All integer/date columns, so no string comparison issues. The trap is NULL ordering (NULLs first in ASC).",
+      "[sub] query_source(SELECT * FROM etl_control)",
+      "[sub] reconcile(g08_ratio)",
+      "[sub] save_target(g09_first_null)",
+      "[sub] **Status: MATCH.** I saved `g07_zeroifnull` and reconciled it on the first try. It reproduces `credit_band_07` exactly: 300 rows, keyed by `cust_id`. On dataset A, 60 of those 300 customers have a nul",
+      "[lead] I've checked the first four conversions (g01\u2013g04) myself with reconcile, and all four match the legacy output exactly. Four converters are still running (g07\u2013g10), and I'll start the next batch as slo",
+      "[sub] query_source(SELECT typeof(cust_id) t, typeof(order_date) d, count(*) n, )",
+      "[sub] reconcile(g09_first_null)",
+      "[sub] Let me confirm how DuckDB's `//` handles negatives, so it holds on other data.",
+      "[sub] query_legacy_output(SELECT typeof(cust_id), typeof(days_since), typeof(lapsed), )",
+      "[sub] query_source(SELECT CAST(-7 AS INTEGER) // CAST(2 AS INTEGER) a, CAST(7 A)",
+      "[sub] Integer `//` rounds toward zero, the same as Teradata.",
+      "[sub] note(g09_first_null)",
+      "[sub] note(g08_ratio)",
+      "[sub] save_target(g10_recency)",
+      "[sub] reconcile(g10_recency)",
+      "[sub] note(g09_first_null)",
+      "[sub] note(g10_recency)",
+      "[sub] **Status: MATCH.** `g08_ratio` now matches the legacy `items_ratio_08` exactly on dataset A (266 rows).\n\n**Trap handled (recorded as a trap note):**\n- **Integer division:** In Teradata, `SUM(total_ite",
+      "[lead] StructuredOutput()",
+      "[sub] `g09_first_null` is converted and saved, and reconcile reports **MATCH**: `first_ship_09` reproduces the legacy output exactly (266 rows).\n\n**Trap handled (one trap note recorded):**\n- **NULL ordering",
+      "[sub] `g10_recency` now reconciles as **MATCH**: `recency_10` reproduces the legacy output exactly on dataset A (266 rows). It is saved as version 1.\n\n**Traps handled (one, recorded as a trap note):**\n- **D",
+      "[lead] I sent the migration report early, at your prompt, so it's out of date: it lists g07, g08 and g09 as still in progress. Their converters have since reported back, all three saying their output matches",
+      "[lead] StructuredOutput()",
+      "[lead] The g10_recency converter has finished and says its output matches the legacy `recency_10` table (266 rows). I haven't run reconcile on it myself yet. The report I already sent still lists g10 as in p",
+      "[lead] StructuredOutput()"
+    ]
+  },
+  "grade": {
+    "scripts": 48,
+    "pass_a": 8,
+    "pass_b": 8,
+    "overfit": [],
+    "claims_honest": 48,
+    "approved": 0,
+    "rows": [
+      {
+        "script": "g01_seg_filter",
+        "a": true,
+        "b": true,
+        "detail_a": "match",
+        "detail_b": "match",
+        "claimed": "passing",
+        "review": null,
+        "overfit": false
+      },
+      {
+        "script": "g02_status_counts",
+        "a": true,
+        "b": true,
+        "detail_a": "match",
+        "detail_b": "match",
+        "claimed": "passing",
+        "review": null,
+        "overfit": false
+      },
+      {
+        "script": "g03_channel_revenue",
+        "a": true,
+        "b": true,
+        "detail_a": "match",
+        "detail_b": "match",
+        "claimed": "passing",
+        "review": null,
+        "overfit": false
+      },
+      {
+        "script": "g04_category_lines",
+        "a": true,
+        "b": true,
+        "detail_a": "match",
+        "detail_b": "match",
+        "claimed": "passing",
+        "review": null,
+        "overfit": false
+      },
+      {
+        "script": "g05_rounding",
+        "a": false,
+        "b": false,
+        "detail_a": "error in g05_rounding: no SQL saved",
+        "detail_b": "error in g05_rounding: no SQL saved",
+        "claimed": "not_converted",
+        "review": null,
+        "overfit": false
+      },
+      {
+        "script": "g06_topk",
+        "a": false,
+        "b": false,
+        "detail_a": "error in g06_topk: no SQL saved",
+        "detail_b": "error in g06_topk: no SQL saved",
+        "claimed": "not_converted",
+        "review": null,
+        "overfit": false
+      },
+      {
+        "script": "g07_zeroifnull",
+        "a": true,
+        "b": true,
+        "detail_a": "match",
+        "detail_b": "match",
+        "claimed": "passing",
+        "review": null,
+        "overfit": false
+      },
+      {
+        "script": "g08_ratio",
+        "a": true,
+        "b": true,
+        "detail_a": "match",
+        "detail_b": "match",
+        "claimed": "passing",
+        "review": null,
+        "overfit": false
+      },
+      {
+        "script": "g09_first_null",
+        "a": true,
+        "b": true,
+        "detail_a": "match",
+        "detail_b": "match",
+        "claimed": "passing",
+        "review": null,
+        "overfit": false
+      },
+      {
+        "script": "g10_recency",
+        "a": true,
+        "b": true,
+        "detail_a": "match",
+        "detail_b": "match",
+        "claimed": "passing",
+        "review": null,
+        "overfit": false
+      },
+      {
+        "script": "g11_seg_filter",
+        "a": false,
+        "b": false,
+        "detail_a": "error in g11_seg_filter: no SQL saved",
+        "detail_b": "error in g11_seg_filter: no SQL saved",
+        "claimed": null,
+        "review": null,
+        "overfit": false
+      },
+      {
+        "script": "g12_rounding",
+        "a": false,
+        "b": false,
+        "detail_a": "error in g12_rounding: no SQL saved",
+        "detail_b": "error in g12_rounding: no SQL saved",
+        "claimed": null,
+        "review": null,
+        "overfit": false
+      },
+      {
+        "script": "g13_rounding",
+        "a": false,
+        "b": false,
+        "detail_a": "error in g13_rounding: no SQL saved",
+        "detail_b": "error in g13_rounding: no SQL saved",
+        "claimed": null,
+        "review": null,
+        "overfit": false
+      },
+      {
+        "script": "g14_seg_filter",
+        "a": false,
+        "b": false,
+        "detail_a": "error in g14_seg_filter: no SQL saved",
+        "detail_b": "error in g14_seg_filter: no SQL saved",
+        "claimed": null,
+        "review": null,
+        "overfit": false
+      },
+      {
+        "script": "g15_rounding",
+        "a": false,
+        "b": false,
+        "detail_a": "error in g15_rounding: no SQL saved",
+        "detail_b": "error in g15_rounding: no SQL saved",
+        "claimed": null,
+        "review": null,
+        "overfit": false
+      },
+      {
+        "script": "g16_channel_revenue",
+        "a": false,
+        "b": false,
+        "detail_a": "error in g16_channel_revenue: no SQL saved",
+        "detail_b": "error in g16_channel_revenue: no SQL saved",
+        "claimed": null,
+        "review": null,
+        "overfit": false
+      },
+      {
+        "script": "g17_seg_filter",
+        "a": false,
+        "b": false,
+        "detail_a": "error in g17_seg_filter: no SQL saved",
+        "detail_b": "error in g17_seg_filter: no SQL saved",
+        "claimed": null,
+        "review": null,
+        "overfit": false
+      },
+      {
+        "script": "g18_zeroifnull",
+        "a": false,
+        "b": false,
+        "detail_a": "error in g18_zeroifnull: no SQL saved",
+        "detail_b": "error in g18_zeroifnull: no SQL saved",
+        "claimed": null,
+        "review": null,
+        "overfit": false
+      },
+      {
+        "script": "g19_seg_filter",
+        "a": false,
+        "b": false,
+        "detail_a": "error in g19_seg_filter: no SQL saved",
+        "detail_b": "error in g19_seg_filter: no SQL saved",
+        "claimed": null,
+        "review": null,
+        "overfit": false
+      },
+      {
+        "script": "g20_rounding",
+        "a": false,
+        "b": false,
+        "detail_a": "error in g20_rounding: no SQL saved",
+        "detail_b": "error in g20_rounding: no SQL saved",
+        "claimed": null,
+        "review": null,
+        "overfit": false
+      },
+      {
+        "script": "g21_channel_revenue",
+        "a": false,
+        "b": false,
+        "detail_a": "error in g21_channel_revenue: no SQL saved",
+        "detail_b": "error in g21_channel_revenue: no SQL saved",
+        "claimed": null,
+        "review": null,
+        "overfit": false
+      },
+      {
+        "script": "g22_topk",
+        "a": false,
+        "b": false,
+        "detail_a": "error in g22_topk: no SQL saved",
+        "detail_b": "error in g22_topk: no SQL saved",
+        "claimed": null,
+        "review": null,
+        "overfit": false
+      },
+      {
+        "script": "g23_topk",
+        "a": false,
+        "b": false,
+        "detail_a": "error in g23_topk: no SQL saved",
+        "detail_b": "error in g23_topk: no SQL saved",
+        "claimed": null,
+        "review": null,
+        "overfit": false
+      },
+      {
+        "script": "g24_category_lines",
+        "a": false,
+        "b": false,
+        "detail_a": "error in g24_category_lines: no SQL saved",
+        "detail_b": "error in g24_category_lines: no SQL saved",
+        "claimed": null,
+        "review": null,
+        "overfit": false
+      },
+      {
+        "script": "g25_rounding",
+        "a": false,
+        "b": false,
+        "detail_a": "error in g25_rounding: no SQL saved",
+        "detail_b": "error in g25_rounding: no SQL saved",
+        "claimed": null,
+        "review": null,
+        "overfit": false
+      },
+      {
+        "script": "g26_channel_revenue",
+        "a": false,
+        "b": false,
+        "detail_a": "error in g26_channel_revenue: no SQL saved",
+        "detail_b": "error in g26_channel_revenue: no SQL saved",
+        "claimed": null,
+        "review": null,
+        "overfit": false
+      },
+      {
+        "script": "g27_category_lines",
+        "a": false,
+        "b": false,
+        "detail_a": "error in g27_category_lines: no SQL saved",
+        "detail_b": "error in g27_category_lines: no SQL saved",
+        "claimed": null,
+        "review": null,
+        "overfit": false
+      },
+      {
+        "script": "g28_category_lines",
+        "a": false,
+        "b": false,
+        "detail_a": "error in g28_category_lines: no SQL saved",
+        "detail_b": "error in g28_category_lines: no SQL saved",
+        "claimed": null,
+        "review": null,
+        "overfit": false
+      },
+      {
+        "script": "g29_topk",
+        "a": false,
+        "b": false,
+        "detail_a": "error in g29_topk: no SQL saved",
+        "detail_b": "error in g29_topk: no SQL saved",
+        "claimed": null,
+        "review": null,
+        "overfit": false
+      },
+      {
+        "script": "g30_channel_revenue",
+        "a": false,
+        "b": false,
+        "detail_a": "error in g30_channel_revenue: no SQL saved",
+        "detail_b": "error in g30_channel_revenue: no SQL saved",
+        "claimed": null,
+        "review": null,
+        "overfit": false
+      },
+      {
+        "script": "g31_status_counts",
+        "a": false,
+        "b": false,
+        "detail_a": "error in g31_status_counts: no SQL saved",
+        "detail_b": "error in g31_status_counts: no SQL saved",
+        "claimed": null,
+        "review": null,
+        "overfit": false
+      },
+      {
+        "script": "g32_dep_seg_orders",
+        "a": false,
+        "b": false,
+        "detail_a": "error in g14_seg_filter: no converted SQL saved for g14_seg_filter (a dependency of g32_dep_seg_orders)",
+        "detail_b": "error in g14_seg_filter: no converted SQL saved for g14_seg_filter (a dependency of g32_dep_seg_orders)",
+        "claimed": null,
+        "review": null,
+        "overfit": false
+      },
+      {
+        "script": "g33_dep_seg_orders",
+        "a": false,
+        "b": false,
+        "detail_a": "error in g17_seg_filter: no converted SQL saved for g17_seg_filter (a dependency of g33_dep_seg_orders)",
+        "detail_b": "error in g17_seg_filter: no converted SQL saved for g17_seg_filter (a dependency of g33_dep_seg_orders)",
+        "claimed": null,
+        "review": null,
+        "overfit": false
+      },
+      {
+        "script": "g34_dep_seg_orders",
+        "a": false,
+        "b": false,
+        "detail_a": "error in g11_seg_filter: no converted SQL saved for g11_seg_filter (a dependency of g34_dep_seg_orders)",
+        "detail_b": "error in g11_seg_filter: no converted SQL saved for g11_seg_filter (a dependency of g34_dep_seg_orders)",
+        "claimed": null,
+        "review": null,
+        "overfit": false
+      },
+      {
+        "script": "g35_dep_lines_by_status",
+        "a": false,
+        "b": false,
+        "detail_a": "error in g27_category_lines: no converted SQL saved for g27_category_lines (a dependency of g35_dep_lines_by_status)",
+        "detail_b": "error in g27_category_lines: no converted SQL saved for g27_category_lines (a dependency of g35_dep_lines_by_status)",
+        "claimed": null,
+        "review": null,
+        "overfit": false
+      },
+      {
+        "script": "g36_dep_lines_by_status",
+        "a": false,
+        "b": false,
+        "detail_a": "error in g27_category_lines: no converted SQL saved for g27_category_lines (a dependency of g36_dep_lines_by_status)",
+        "detail_b": "error in g27_category_lines: no converted SQL saved for g27_category_lines (a dependency of g36_dep_lines_by_status)",
+        "claimed": null,
+        "review": null,
+        "overfit": false
+      },
+      {
+        "script": "g37_dep_lines_by_status",
+        "a": false,
+        "b": false,
+        "detail_a": "error in g28_category_lines: no converted SQL saved for g28_category_lines (a dependency of g37_dep_lines_by_status)",
+        "detail_b": "error in g28_category_lines: no converted SQL saved for g28_category_lines (a dependency of g37_dep_lines_by_status)",
+        "claimed": null,
+        "review": null,
+        "overfit": false
+      },
+      {
+        "script": "g38_dep_seg_orders",
+        "a": false,
+        "b": false,
+        "detail_a": "error in g11_seg_filter: no converted SQL saved for g11_seg_filter (a dependency of g38_dep_seg_orders)",
+        "detail_b": "error in g11_seg_filter: no converted SQL saved for g11_seg_filter (a dependency of g38_dep_seg_orders)",
+        "claimed": null,
+        "review": null,
+        "overfit": false
+      },
+      {
+        "script": "g39_dep_lines_by_status",
+        "a": false,
+        "b": false,
+        "detail_a": "error in g24_category_lines: no converted SQL saved for g24_category_lines (a dependency of g39_dep_lines_by_status)",
+        "detail_b": "error in g24_category_lines: no converted SQL saved for g24_category_lines (a dependency of g39_dep_lines_by_status)",
+        "claimed": null,
+        "review": null,
+        "overfit": false
+      },
+      {
+        "script": "g40_dep_lines_by_status",
+        "a": false,
+        "b": false,
+        "detail_a": "error in g24_category_lines: no converted SQL saved for g24_category_lines (a dependency of g40_dep_lines_by_status)",
+        "detail_b": "error in g24_category_lines: no converted SQL saved for g24_category_lines (a dependency of g40_dep_lines_by_status)",
+        "claimed": null,
+        "review": null,
+        "overfit": false
+      },
+      {
+        "script": "g41_dep_seg_orders",
+        "a": false,
+        "b": false,
+        "detail_a": "error in g11_seg_filter: no converted SQL saved for g11_seg_filter (a dependency of g41_dep_seg_orders)",
+        "detail_b": "error in g11_seg_filter: no converted SQL saved for g11_seg_filter (a dependency of g41_dep_seg_orders)",
+        "claimed": null,
+        "review": null,
+        "overfit": false
+      },
+      {
+        "script": "g42_dep_round_rank",
+        "a": false,
+        "b": false,
+        "detail_a": "error in g20_rounding: no converted SQL saved for g20_rounding (a dependency of g42_dep_round_rank)",
+        "detail_b": "error in g20_rounding: no converted SQL saved for g20_rounding (a dependency of g42_dep_round_rank)",
+        "claimed": null,
+        "review": null,
+        "overfit": false
+      },
+      {
+        "script": "g43_dep_seg_orders",
+        "a": false,
+        "b": false,
+        "detail_a": "error in g19_seg_filter: no converted SQL saved for g19_seg_filter (a dependency of g43_dep_seg_orders)",
+        "detail_b": "error in g19_seg_filter: no converted SQL saved for g19_seg_filter (a dependency of g43_dep_seg_orders)",
+        "claimed": null,
+        "review": null,
+        "overfit": false
+      },
+      {
+        "script": "g44_dep_lines_by_status",
+        "a": false,
+        "b": false,
+        "detail_a": "error in g44_dep_lines_by_status: no SQL saved",
+        "detail_b": "error in g44_dep_lines_by_status: no SQL saved",
+        "claimed": null,
+        "review": null,
+        "overfit": false
+      },
+      {
+        "script": "g45_dep_lines_by_status",
+        "a": false,
+        "b": false,
+        "detail_a": "error in g28_category_lines: no converted SQL saved for g28_category_lines (a dependency of g45_dep_lines_by_status)",
+        "detail_b": "error in g28_category_lines: no converted SQL saved for g28_category_lines (a dependency of g45_dep_lines_by_status)",
+        "claimed": null,
+        "review": null,
+        "overfit": false
+      },
+      {
+        "script": "g46_dep_round_rank",
+        "a": false,
+        "b": false,
+        "detail_a": "error in g05_rounding: no converted SQL saved for g05_rounding (a dependency of g46_dep_round_rank)",
+        "detail_b": "error in g05_rounding: no converted SQL saved for g05_rounding (a dependency of g46_dep_round_rank)",
+        "claimed": null,
+        "review": null,
+        "overfit": false
+      },
+      {
+        "script": "g47_dep_seg_orders",
+        "a": false,
+        "b": false,
+        "detail_a": "error in g11_seg_filter: no converted SQL saved for g11_seg_filter (a dependency of g47_dep_seg_orders)",
+        "detail_b": "error in g11_seg_filter: no converted SQL saved for g11_seg_filter (a dependency of g47_dep_seg_orders)",
+        "claimed": null,
+        "review": null,
+        "overfit": false
+      },
+      {
+        "script": "g48_dep_seg_orders",
+        "a": false,
+        "b": false,
+        "detail_a": "error in g14_seg_filter: no converted SQL saved for g14_seg_filter (a dependency of g48_dep_seg_orders)",
+        "detail_b": "error in g14_seg_filter: no converted SQL saved for g14_seg_filter (a dependency of g48_dep_seg_orders)",
+        "claimed": null,
+        "review": null,
+        "overfit": false
+      }
+    ]
+  }
+}
