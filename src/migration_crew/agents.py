@@ -134,8 +134,9 @@ def options(ws: Workspace, mode: str, counter: dict, model: str, budget_usd: flo
     if mode == "solo":
         return ClaudeAgentOptions(system_prompt=SOLO_PROMPT, tools=[], allowed_tools=_mcp(SOLO_TOOLS),
                                   max_turns=max(250, 10 * n), **common)
-    # Subagents run in the foreground: a background one lets the lead end its turn mid-wave, and with a required
-    # structured report that ends the run (seen at 48 scripts: 8 converted, report written, 40 never started).
+    # Delegations over the concurrency cap are rejected ("do not retry"); a lead that fires 10 at once ends its turn
+    # with work outstanding and, with a required structured report, can end the run (seen at 48 scripts: 8 converted,
+    # 40 never started). The lead now delegates in waves of MAX_PARALLEL; finished subagents re-invoke it.
     return ClaudeAgentOptions(
         system_prompt=LEAD_PROMPT, tools=["Agent"],
         # permission is session-wide: every tool any subagent uses must be approved here

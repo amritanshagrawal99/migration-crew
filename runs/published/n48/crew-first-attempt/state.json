@@ -1,0 +1,386 @@
+{
+  "g01_seg_filter": {
+    "attempts": 1,
+    "reconciles": 2,
+    "status": "passing",
+    "review": null,
+    "notes": [
+      {
+        "kind": "trap",
+        "text": "Session mode string comparison is NOT CASESPECIFIC and ignores trailing blanks. segment = 'silver' becomes lower(rtrim(segment,' ')) = lower(rtrim('silver',' ')). Without this, a plain DuckDB = misses variants like 'Silver' and 'SILVER ' (33 rows instead of 99 on dataset A)."
+      },
+      {
+        "kind": "decision",
+        "text": "Teradata TRIM(x) removes only leading and trailing spaces, so it maps to DuckDB trim(x, ' ') with the space character written out. The legacy table keeps the original cust_code casing, so no case folding is applied to it. Output types are cust_id INTEGER, cust_code VARCHAR, signup_date DATE, the same as the legacy output."
+      }
+    ]
+  },
+  "g02_status_counts": {
+    "attempts": 1,
+    "reconciles": 2,
+    "status": "passing",
+    "review": null,
+    "notes": [
+      {
+        "kind": "trap",
+        "text": "Session-mode NOT CASESPECIFIC, blank-padded comparison: status IN ('pending','Shipped') matches 'Pending ', 'SHIPPED ', 'shipped' etc. in Teradata. Rewritten as lower(rtrim(status)) IN (lower(rtrim('pending')), lower(rtrim('Shipped'))) so that both the column and the literals are normalised."
+      }
+    ]
+  },
+  "g03_channel_revenue": {
+    "attempts": 1,
+    "reconciles": 2,
+    "status": "passing",
+    "review": null,
+    "notes": [
+      {
+        "kind": "trap",
+        "text": "Session-mode string comparison: channel = 'WEB' is NOT CASESPECIFIC and blank-padded in Teradata, so it matches 'web', 'Web  ', etc. DuckDB '=' is case- and space-sensitive; rewritten as lower(rtrim(channel)) = lower(rtrim('WEB'))."
+      }
+    ]
+  },
+  "g04_category_lines": {
+    "attempts": 1,
+    "reconciles": 2,
+    "status": "passing",
+    "review": null,
+    "notes": [
+      {
+        "kind": "trap",
+        "text": "Session mode NOT CASESPECIFIC, blank-padded comparisons: join ol.sku (CHAR(10)) = p.sku and filter p.category = 'garden' rewritten as lower(rtrim(a)) = lower(rtrim(b)) on both sides, so trailing spaces and case differences match as in Teradata."
+      }
+    ]
+  },
+  "g05_rounding": {
+    "attempts": 0,
+    "reconciles": 0,
+    "status": "not_started",
+    "review": null,
+    "notes": []
+  },
+  "g06_topk": {
+    "attempts": 0,
+    "reconciles": 0,
+    "status": "not_started",
+    "review": null,
+    "notes": []
+  },
+  "g07_zeroifnull": {
+    "attempts": 1,
+    "reconciles": 1,
+    "status": "passing",
+    "review": null,
+    "notes": [
+      {
+        "kind": "trap",
+        "text": "ZEROIFNULL(credit_limit) is Teradata-only; mapped to COALESCE(credit_limit, 0) in both the output column and the CASE band test, so NULL limits become 0 and fall into 'LOW'. Cast explicitly to DECIMAL(12,2) to keep the legacy column type. No string comparisons, rounding, division or ORDER BY in this script, so no other session-mode semantics apply."
+      }
+    ]
+  },
+  "g08_ratio": {
+    "attempts": 1,
+    "reconciles": 1,
+    "status": "passing",
+    "review": null,
+    "notes": [
+      {
+        "kind": "trap",
+        "text": "INTEGER / INTEGER truncates toward zero in Teradata; DuckDB '/' returns DOUBLE. Used integer '//' (verified it rounds toward zero for negatives: -7//2 = -3, 7//-2 = -3), cast to BIGINT to match the legacy output type. COUNT(*) >= 1 per group, so division by zero can't happen; if every total_items in a group is NULL, the result is NULL on both platforms."
+      }
+    ]
+  },
+  "g09_first_null": {
+    "attempts": 1,
+    "reconciles": 1,
+    "status": "passing",
+    "review": null,
+    "notes": [
+      {
+        "kind": "trap",
+        "text": "Teradata sorts NULLs first in ASC. The window ORDER BY (ship_date ASC, order_id ASC) now says NULLS FIRST on both keys, so a customer whose orders include one with a NULL ship_date gets that order as its \"first\" row, as in legacy (149 of 266 legacy rows have a non-null ship_date). DuckDB's default is NULLS LAST, which would pick a different row. The partition key cust_id is INTEGER, so no case or trailing-space comparison rules apply."
+      },
+      {
+        "kind": "legacy_bug",
+        "text": "The job is meant to find each customer's first order \"in fulfilment order\". Because Teradata sorts NULLs first, an order that has not shipped (NULL ship_date) beats every shipped order. On dataset A, 117 of 266 customers get an unshipped order as their first shipment. This is reproduced for parity and not fixed."
+      }
+    ]
+  },
+  "g10_recency": {
+    "attempts": 1,
+    "reconciles": 1,
+    "status": "passing",
+    "review": null,
+    "notes": [
+      {
+        "kind": "trap",
+        "text": "DATE - DATE: in Teradata this gives an integer number of days. In DuckDB, subtracting two DATE values also gives an integer day count (BIGINT), so run_date - MAX(order_date) is kept as is and cast explicitly to BIGINT to match the legacy column type. The script has no string comparisons (cust_id is INTEGER), no rounding, no division and no ORDER BY, so the other session-mode rules do not apply here. If MAX(order_date) is NULL, days_since is NULL and lapsed falls to 0, the same as in Teradata."
+      }
+    ]
+  },
+  "g11_seg_filter": {
+    "attempts": 0,
+    "reconciles": 0,
+    "status": "not_started",
+    "review": null,
+    "notes": []
+  },
+  "g12_rounding": {
+    "attempts": 0,
+    "reconciles": 0,
+    "status": "not_started",
+    "review": null,
+    "notes": []
+  },
+  "g13_rounding": {
+    "attempts": 0,
+    "reconciles": 0,
+    "status": "not_started",
+    "review": null,
+    "notes": []
+  },
+  "g14_seg_filter": {
+    "attempts": 0,
+    "reconciles": 0,
+    "status": "not_started",
+    "review": null,
+    "notes": []
+  },
+  "g15_rounding": {
+    "attempts": 0,
+    "reconciles": 0,
+    "status": "not_started",
+    "review": null,
+    "notes": []
+  },
+  "g16_channel_revenue": {
+    "attempts": 0,
+    "reconciles": 0,
+    "status": "not_started",
+    "review": null,
+    "notes": []
+  },
+  "g17_seg_filter": {
+    "attempts": 0,
+    "reconciles": 0,
+    "status": "not_started",
+    "review": null,
+    "notes": []
+  },
+  "g18_zeroifnull": {
+    "attempts": 0,
+    "reconciles": 0,
+    "status": "not_started",
+    "review": null,
+    "notes": []
+  },
+  "g19_seg_filter": {
+    "attempts": 0,
+    "reconciles": 0,
+    "status": "not_started",
+    "review": null,
+    "notes": []
+  },
+  "g20_rounding": {
+    "attempts": 0,
+    "reconciles": 0,
+    "status": "not_started",
+    "review": null,
+    "notes": []
+  },
+  "g21_channel_revenue": {
+    "attempts": 0,
+    "reconciles": 0,
+    "status": "not_started",
+    "review": null,
+    "notes": []
+  },
+  "g22_topk": {
+    "attempts": 0,
+    "reconciles": 0,
+    "status": "not_started",
+    "review": null,
+    "notes": []
+  },
+  "g23_topk": {
+    "attempts": 0,
+    "reconciles": 0,
+    "status": "not_started",
+    "review": null,
+    "notes": []
+  },
+  "g24_category_lines": {
+    "attempts": 0,
+    "reconciles": 0,
+    "status": "not_started",
+    "review": null,
+    "notes": []
+  },
+  "g25_rounding": {
+    "attempts": 0,
+    "reconciles": 0,
+    "status": "not_started",
+    "review": null,
+    "notes": []
+  },
+  "g26_channel_revenue": {
+    "attempts": 0,
+    "reconciles": 0,
+    "status": "not_started",
+    "review": null,
+    "notes": []
+  },
+  "g27_category_lines": {
+    "attempts": 0,
+    "reconciles": 0,
+    "status": "not_started",
+    "review": null,
+    "notes": []
+  },
+  "g28_category_lines": {
+    "attempts": 0,
+    "reconciles": 0,
+    "status": "not_started",
+    "review": null,
+    "notes": []
+  },
+  "g29_topk": {
+    "attempts": 0,
+    "reconciles": 0,
+    "status": "not_started",
+    "review": null,
+    "notes": []
+  },
+  "g30_channel_revenue": {
+    "attempts": 0,
+    "reconciles": 0,
+    "status": "not_started",
+    "review": null,
+    "notes": []
+  },
+  "g31_status_counts": {
+    "attempts": 0,
+    "reconciles": 0,
+    "status": "not_started",
+    "review": null,
+    "notes": []
+  },
+  "g32_dep_seg_orders": {
+    "attempts": 0,
+    "reconciles": 0,
+    "status": "not_started",
+    "review": null,
+    "notes": []
+  },
+  "g33_dep_seg_orders": {
+    "attempts": 0,
+    "reconciles": 0,
+    "status": "not_started",
+    "review": null,
+    "notes": []
+  },
+  "g34_dep_seg_orders": {
+    "attempts": 0,
+    "reconciles": 0,
+    "status": "not_started",
+    "review": null,
+    "notes": []
+  },
+  "g35_dep_lines_by_status": {
+    "attempts": 0,
+    "reconciles": 0,
+    "status": "not_started",
+    "review": null,
+    "notes": []
+  },
+  "g36_dep_lines_by_status": {
+    "attempts": 0,
+    "reconciles": 0,
+    "status": "not_started",
+    "review": null,
+    "notes": []
+  },
+  "g37_dep_lines_by_status": {
+    "attempts": 0,
+    "reconciles": 0,
+    "status": "not_started",
+    "review": null,
+    "notes": []
+  },
+  "g38_dep_seg_orders": {
+    "attempts": 0,
+    "reconciles": 0,
+    "status": "not_started",
+    "review": null,
+    "notes": []
+  },
+  "g39_dep_lines_by_status": {
+    "attempts": 0,
+    "reconciles": 0,
+    "status": "not_started",
+    "review": null,
+    "notes": []
+  },
+  "g40_dep_lines_by_status": {
+    "attempts": 0,
+    "reconciles": 0,
+    "status": "not_started",
+    "review": null,
+    "notes": []
+  },
+  "g41_dep_seg_orders": {
+    "attempts": 0,
+    "reconciles": 0,
+    "status": "not_started",
+    "review": null,
+    "notes": []
+  },
+  "g42_dep_round_rank": {
+    "attempts": 0,
+    "reconciles": 0,
+    "status": "not_started",
+    "review": null,
+    "notes": []
+  },
+  "g43_dep_seg_orders": {
+    "attempts": 0,
+    "reconciles": 0,
+    "status": "not_started",
+    "review": null,
+    "notes": []
+  },
+  "g44_dep_lines_by_status": {
+    "attempts": 0,
+    "reconciles": 0,
+    "status": "not_started",
+    "review": null,
+    "notes": []
+  },
+  "g45_dep_lines_by_status": {
+    "attempts": 0,
+    "reconciles": 0,
+    "status": "not_started",
+    "review": null,
+    "notes": []
+  },
+  "g46_dep_round_rank": {
+    "attempts": 0,
+    "reconciles": 0,
+    "status": "not_started",
+    "review": null,
+    "notes": []
+  },
+  "g47_dep_seg_orders": {
+    "attempts": 0,
+    "reconciles": 0,
+    "status": "not_started",
+    "review": null,
+    "notes": []
+  },
+  "g48_dep_seg_orders": {
+    "attempts": 0,
+    "reconciles": 0,
+    "status": "not_started",
+    "review": null,
+    "notes": []
+  }
+}

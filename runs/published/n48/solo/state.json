@@ -1,0 +1,626 @@
+{
+  "g01_seg_filter": {
+    "attempts": 1,
+    "reconciles": 1,
+    "status": "passing",
+    "review": "approved",
+    "notes": [
+      {
+        "kind": "trap",
+        "text": "Teradata session mode: character comparisons are NOT CASESPECIFIC and ignore trailing pad spaces (leading spaces still count). DuckDB compares exactly. Applied as a general rule to every string comparison/IN/join in the estate: upper(rtrim(col,' ')) = upper(rtrim(literal,' ')). Applies to seg_filter (g01,g11,g14,g17,g19), status_counts (g02,g31), channel_revenue (g03,g16,g21,g26,g30), category_lines (g04,g24,g27,g28: category filter AND CHAR(10) sku join), and all dep_* status filters."
+      },
+      {
+        "kind": "risk",
+        "text": "Case folding uses DuckDB upper() (Unicode). This matches Teradata for ASCII/LATIN data; non-Latin characters could compare differently. Only spaces count as pad characters (rtrim(x,' ')), so tabs or other whitespace still make values differ, as in Teradata."
+      },
+      {
+        "kind": "review:approved",
+        "text": "Segment filter uses the case-insensitive, trailing-space-insensitive comparison rule generically; TRIM semantics identical."
+      }
+    ]
+  },
+  "g02_status_counts": {
+    "attempts": 1,
+    "reconciles": 1,
+    "status": "passing",
+    "review": "approved",
+    "notes": [
+      {
+        "kind": "review:approved",
+        "text": "Rule applied to every IN-list element; NULL status falls to ELSE 0 as in legacy."
+      }
+    ]
+  },
+  "g03_channel_revenue": {
+    "attempts": 1,
+    "reconciles": 1,
+    "status": "passing",
+    "review": "approved",
+    "notes": [
+      {
+        "kind": "review:approved",
+        "text": "Channel filter uses generic comparison rule."
+      }
+    ]
+  },
+  "g04_category_lines": {
+    "attempts": 1,
+    "reconciles": 1,
+    "status": "passing",
+    "review": "approved",
+    "notes": [
+      {
+        "kind": "trap",
+        "text": "order_lines.sku is CHAR(10) with trailing pad spaces while products.sku is VARCHAR without. In Teradata the join matches after padding; in DuckDB it would match nothing. Join is on upper(rtrim(sku,' ')) on both sides (same in g24,g27,g28)."
+      },
+      {
+        "kind": "review:approved",
+        "text": "Rule applied both to the CHAR(10) sku join (both sides) and the category filter."
+      }
+    ]
+  },
+  "g05_rounding": {
+    "attempts": 1,
+    "reconciles": 1,
+    "status": "passing",
+    "review": "approved",
+    "notes": [
+      {
+        "kind": "trap",
+        "text": "RoundHalfwayMagUp=FALSE: Teradata CAST to DECIMAL with fewer scale digits rounds exact halves to even; DuckDB CAST rounds half away from zero. Converted as CAST(round_even(x,1) AS DECIMAL(14,1)) in all rounding scripts (g05,g12,g13,g15,g20,g25) and the amount_1dp column of all lines_by_status scripts (g35-g37,g39,g40,g44,g45); g42/g46 inherit it via value_1dp_20/value_1dp_05."
+      },
+      {
+        "kind": "review:approved",
+        "text": "Half-even rounding via round_even before DECIMAL(14,1) cast (RoundHalfwayMagUp=FALSE)."
+      }
+    ]
+  },
+  "g06_topk": {
+    "attempts": 1,
+    "reconciles": 1,
+    "status": "passing",
+    "review": "approved",
+    "notes": [
+      {
+        "kind": "trap",
+        "text": "TOP n WITH TIES has no DuckDB equivalent: converted to RANK() OVER (ORDER BY metric DESC NULLS LAST) <= n (Teradata sorts NULL as lowest, i.e. last in DESC). Same in g22,g23,g29,g42,g46."
+      },
+      {
+        "kind": "review:approved",
+        "text": "TOP WITH TIES -> RANK()<=n with NULLS LAST in DESC."
+      }
+    ]
+  },
+  "g07_zeroifnull": {
+    "attempts": 1,
+    "reconciles": 1,
+    "status": "passing",
+    "review": "approved",
+    "notes": [
+      {
+        "kind": "trap",
+        "text": "ZEROIFNULL is not a DuckDB function: converted to COALESCE(x, 0) (same in g18)."
+      },
+      {
+        "kind": "review:approved",
+        "text": "COALESCE(x,0) keeps DECIMAL(12,2) type."
+      }
+    ]
+  },
+  "g08_ratio": {
+    "attempts": 1,
+    "reconciles": 1,
+    "status": "passing",
+    "review": "approved",
+    "notes": [
+      {
+        "kind": "trap",
+        "text": "Teradata INTEGER/INTEGER truncates toward zero; DuckDB '/' returns DOUBLE. Converted to '//' (verified truncating toward zero: -7//2 = -3)."
+      },
+      {
+        "kind": "legacy_bug",
+        "text": "items_per_order uses integer division, so the fractional part is dropped (e.g. 7 items / 2 orders = 3). Reproduced for parity."
+      },
+      {
+        "kind": "review:approved",
+        "text": "Integer division via // (truncation toward zero verified, including negative operands)."
+      }
+    ]
+  },
+  "g09_first_null": {
+    "attempts": 1,
+    "reconciles": 1,
+    "status": "passing",
+    "review": "approved",
+    "notes": [
+      {
+        "kind": "trap",
+        "text": "Teradata sorts NULLs first in ASC; DuckDB defaults NULLS LAST. Made explicit: ORDER BY ship_date ASC NULLS FIRST, order_id ASC NULLS FIRST."
+      },
+      {
+        "kind": "legacy_bug",
+        "text": "'First order in fulfilment order' picks an unshipped order (NULL ship_date) ahead of any shipped one because of Teradata NULL ordering, which is probably not what was meant. Reproduced for parity."
+      },
+      {
+        "kind": "review:approved",
+        "text": "Explicit NULLS FIRST on all ASC keys reproduces Teradata ordering."
+      }
+    ]
+  },
+  "g10_recency": {
+    "attempts": 1,
+    "reconciles": 1,
+    "status": "passing",
+    "review": "approved",
+    "notes": [
+      {
+        "kind": "decision",
+        "text": "DATE - DATE yields integer days in both engines; cast to INTEGER to match Teradata type. The CROSS JOIN to etl_control is kept as is (it assumes etl_control has one row)."
+      },
+      {
+        "kind": "review:approved",
+        "text": "Date difference in integer days; semantics identical."
+      }
+    ]
+  },
+  "g11_seg_filter": {
+    "attempts": 1,
+    "reconciles": 1,
+    "status": "passing",
+    "review": "approved",
+    "notes": [
+      {
+        "kind": "review:approved",
+        "text": "Generic session-mode comparison rule applied; no data-specific values."
+      }
+    ]
+  },
+  "g12_rounding": {
+    "attempts": 1,
+    "reconciles": 1,
+    "status": "passing",
+    "review": "approved",
+    "notes": [
+      {
+        "kind": "review:approved",
+        "text": "Half-even rounding applied."
+      }
+    ]
+  },
+  "g13_rounding": {
+    "attempts": 1,
+    "reconciles": 1,
+    "status": "passing",
+    "review": "approved",
+    "notes": [
+      {
+        "kind": "review:approved",
+        "text": "Half-even rounding applied."
+      }
+    ]
+  },
+  "g14_seg_filter": {
+    "attempts": 1,
+    "reconciles": 1,
+    "status": "passing",
+    "review": "approved",
+    "notes": [
+      {
+        "kind": "review:approved",
+        "text": "Generic session-mode comparison rule applied; no data-specific values."
+      }
+    ]
+  },
+  "g15_rounding": {
+    "attempts": 1,
+    "reconciles": 1,
+    "status": "passing",
+    "review": "approved",
+    "notes": [
+      {
+        "kind": "review:approved",
+        "text": "Half-even rounding applied."
+      }
+    ]
+  },
+  "g16_channel_revenue": {
+    "attempts": 1,
+    "reconciles": 1,
+    "status": "passing",
+    "review": "approved",
+    "notes": [
+      {
+        "kind": "review:approved",
+        "text": "Channel filter uses generic comparison rule."
+      }
+    ]
+  },
+  "g17_seg_filter": {
+    "attempts": 1,
+    "reconciles": 1,
+    "status": "passing",
+    "review": "approved",
+    "notes": [
+      {
+        "kind": "review:approved",
+        "text": "Generic session-mode comparison rule applied; no data-specific values."
+      }
+    ]
+  },
+  "g18_zeroifnull": {
+    "attempts": 1,
+    "reconciles": 1,
+    "status": "passing",
+    "review": "approved",
+    "notes": [
+      {
+        "kind": "review:approved",
+        "text": "COALESCE(x,0) keeps DECIMAL(12,2) type."
+      }
+    ]
+  },
+  "g19_seg_filter": {
+    "attempts": 1,
+    "reconciles": 1,
+    "status": "passing",
+    "review": "approved",
+    "notes": [
+      {
+        "kind": "review:approved",
+        "text": "Generic session-mode comparison rule applied; no data-specific values."
+      }
+    ]
+  },
+  "g20_rounding": {
+    "attempts": 1,
+    "reconciles": 1,
+    "status": "passing",
+    "review": "approved",
+    "notes": [
+      {
+        "kind": "review:approved",
+        "text": "Half-even rounding applied."
+      }
+    ]
+  },
+  "g21_channel_revenue": {
+    "attempts": 1,
+    "reconciles": 1,
+    "status": "passing",
+    "review": "approved",
+    "notes": [
+      {
+        "kind": "review:approved",
+        "text": "Channel filter uses generic comparison rule."
+      }
+    ]
+  },
+  "g22_topk": {
+    "attempts": 1,
+    "reconciles": 1,
+    "status": "passing",
+    "review": "approved",
+    "notes": [
+      {
+        "kind": "review:approved",
+        "text": "TOP WITH TIES -> RANK()<=n with NULLS LAST in DESC."
+      }
+    ]
+  },
+  "g23_topk": {
+    "attempts": 1,
+    "reconciles": 1,
+    "status": "passing",
+    "review": "approved",
+    "notes": [
+      {
+        "kind": "risk",
+        "text": "Teradata SUM(INTEGER) can raise a numeric overflow when the total is very large, while DuckDB widens to HUGEINT. On such data the legacy job would fail and the DuckDB job would succeed. Not reproduced."
+      },
+      {
+        "kind": "review:approved",
+        "text": "TOP WITH TIES -> RANK()<=n; NULL sums rank last as in Teradata."
+      }
+    ]
+  },
+  "g24_category_lines": {
+    "attempts": 1,
+    "reconciles": 1,
+    "status": "passing",
+    "review": "approved",
+    "notes": [
+      {
+        "kind": "review:approved",
+        "text": "Rule applied to sku join and category filter."
+      }
+    ]
+  },
+  "g25_rounding": {
+    "attempts": 1,
+    "reconciles": 1,
+    "status": "passing",
+    "review": "approved",
+    "notes": [
+      {
+        "kind": "review:approved",
+        "text": "Half-even rounding applied."
+      }
+    ]
+  },
+  "g26_channel_revenue": {
+    "attempts": 1,
+    "reconciles": 1,
+    "status": "passing",
+    "review": "approved",
+    "notes": [
+      {
+        "kind": "review:approved",
+        "text": "Channel filter uses generic comparison rule."
+      }
+    ]
+  },
+  "g27_category_lines": {
+    "attempts": 1,
+    "reconciles": 1,
+    "status": "passing",
+    "review": "approved",
+    "notes": [
+      {
+        "kind": "review:approved",
+        "text": "Rule applied to sku join and category filter."
+      }
+    ]
+  },
+  "g28_category_lines": {
+    "attempts": 1,
+    "reconciles": 1,
+    "status": "passing",
+    "review": "approved",
+    "notes": [
+      {
+        "kind": "review:approved",
+        "text": "Rule applied to sku join and category filter."
+      }
+    ]
+  },
+  "g29_topk": {
+    "attempts": 1,
+    "reconciles": 1,
+    "status": "passing",
+    "review": "approved",
+    "notes": [
+      {
+        "kind": "review:approved",
+        "text": "TOP WITH TIES -> RANK()<=n; NULL sums rank last as in Teradata."
+      }
+    ]
+  },
+  "g30_channel_revenue": {
+    "attempts": 1,
+    "reconciles": 1,
+    "status": "passing",
+    "review": "approved",
+    "notes": [
+      {
+        "kind": "review:approved",
+        "text": "Channel filter uses generic comparison rule."
+      }
+    ]
+  },
+  "g31_status_counts": {
+    "attempts": 1,
+    "reconciles": 1,
+    "status": "passing",
+    "review": "approved",
+    "notes": [
+      {
+        "kind": "review:approved",
+        "text": "Rule applied to IN-list; matches legacy."
+      }
+    ]
+  },
+  "g32_dep_seg_orders": {
+    "attempts": 1,
+    "reconciles": 1,
+    "status": "passing",
+    "review": "approved",
+    "notes": [
+      {
+        "kind": "review:approved",
+        "text": "Status filter uses generic comparison rule; upstream seg_gold_14 approved."
+      }
+    ]
+  },
+  "g33_dep_seg_orders": {
+    "attempts": 1,
+    "reconciles": 1,
+    "status": "passing",
+    "review": "approved",
+    "notes": [
+      {
+        "kind": "review:approved",
+        "text": "Status filter uses generic comparison rule."
+      }
+    ]
+  },
+  "g34_dep_seg_orders": {
+    "attempts": 1,
+    "reconciles": 1,
+    "status": "passing",
+    "review": "approved",
+    "notes": [
+      {
+        "kind": "review:approved",
+        "text": "Status filter uses generic comparison rule."
+      }
+    ]
+  },
+  "g35_dep_lines_by_status": {
+    "attempts": 1,
+    "reconciles": 1,
+    "status": "passing",
+    "review": "approved",
+    "notes": [
+      {
+        "kind": "review:approved",
+        "text": "Comparison rule on status plus half-even amount_1dp."
+      }
+    ]
+  },
+  "g36_dep_lines_by_status": {
+    "attempts": 1,
+    "reconciles": 1,
+    "status": "passing",
+    "review": "approved",
+    "notes": [
+      {
+        "kind": "review:approved",
+        "text": "Comparison rule on status plus half-even amount_1dp."
+      }
+    ]
+  },
+  "g37_dep_lines_by_status": {
+    "attempts": 1,
+    "reconciles": 1,
+    "status": "passing",
+    "review": "approved",
+    "notes": [
+      {
+        "kind": "review:approved",
+        "text": "Comparison rule on status plus half-even amount_1dp."
+      }
+    ]
+  },
+  "g38_dep_seg_orders": {
+    "attempts": 1,
+    "reconciles": 1,
+    "status": "passing",
+    "review": "approved",
+    "notes": [
+      {
+        "kind": "review:approved",
+        "text": "Status filter uses generic comparison rule."
+      }
+    ]
+  },
+  "g39_dep_lines_by_status": {
+    "attempts": 1,
+    "reconciles": 1,
+    "status": "passing",
+    "review": "approved",
+    "notes": [
+      {
+        "kind": "review:approved",
+        "text": "Comparison rule on status plus half-even amount_1dp."
+      }
+    ]
+  },
+  "g40_dep_lines_by_status": {
+    "attempts": 1,
+    "reconciles": 1,
+    "status": "passing",
+    "review": "approved",
+    "notes": [
+      {
+        "kind": "review:approved",
+        "text": "Comparison rule on status plus half-even amount_1dp."
+      }
+    ]
+  },
+  "g41_dep_seg_orders": {
+    "attempts": 1,
+    "reconciles": 1,
+    "status": "passing",
+    "review": "approved",
+    "notes": [
+      {
+        "kind": "review:approved",
+        "text": "Status filter uses generic comparison rule."
+      }
+    ]
+  },
+  "g42_dep_round_rank": {
+    "attempts": 1,
+    "reconciles": 1,
+    "status": "passing",
+    "review": "approved",
+    "notes": [
+      {
+        "kind": "review:approved",
+        "text": "RANK-based top-with-ties over the half-even-rounded value_1dp_20."
+      }
+    ]
+  },
+  "g43_dep_seg_orders": {
+    "attempts": 1,
+    "reconciles": 1,
+    "status": "passing",
+    "review": "approved",
+    "notes": [
+      {
+        "kind": "review:approved",
+        "text": "Status filter uses generic comparison rule."
+      }
+    ]
+  },
+  "g44_dep_lines_by_status": {
+    "attempts": 1,
+    "reconciles": 1,
+    "status": "passing",
+    "review": "approved",
+    "notes": [
+      {
+        "kind": "review:approved",
+        "text": "Comparison rule on status plus half-even amount_1dp."
+      }
+    ]
+  },
+  "g45_dep_lines_by_status": {
+    "attempts": 1,
+    "reconciles": 1,
+    "status": "passing",
+    "review": "approved",
+    "notes": [
+      {
+        "kind": "review:approved",
+        "text": "Comparison rule on status plus half-even amount_1dp."
+      }
+    ]
+  },
+  "g46_dep_round_rank": {
+    "attempts": 1,
+    "reconciles": 1,
+    "status": "passing",
+    "review": "approved",
+    "notes": [
+      {
+        "kind": "review:approved",
+        "text": "RANK-based top-with-ties over the half-even-rounded value_1dp_05."
+      }
+    ]
+  },
+  "g47_dep_seg_orders": {
+    "attempts": 1,
+    "reconciles": 1,
+    "status": "passing",
+    "review": "approved",
+    "notes": [
+      {
+        "kind": "review:approved",
+        "text": "Status filter uses generic comparison rule."
+      }
+    ]
+  },
+  "g48_dep_seg_orders": {
+    "attempts": 1,
+    "reconciles": 1,
+    "status": "passing",
+    "review": "approved",
+    "notes": [
+      {
+        "kind": "review:approved",
+        "text": "Status filter uses generic comparison rule."
+      }
+    ]
+  }
+}
