@@ -15,7 +15,7 @@ from pathlib import Path
 
 import duckdb
 
-from .estate import ScriptError, describe, estate_dir, legacy_dir, load, reconcile, run_chain, scripts
+from .estate import ROOT, ScriptError, describe, estate_dir, legacy_dir, load, reconcile, run_chain, scripts
 
 MAX_ROWS = 40
 
@@ -41,7 +41,8 @@ class Workspace:
         (self.root / "target").mkdir(parents=True, exist_ok=True)
         marker = self.root / "estate.txt"           # the estate this workspace belongs to (used by grading)
         if not marker.exists():
-            marker.write_text(str(estate_dir()))
+            e = estate_dir()
+            marker.write_text(e.relative_to(ROOT).as_posix() if e.is_relative_to(ROOT) else str(e))
         if not self.state_path.exists():
             self.save_state({n: {"attempts": 0, "reconciles": 0, "status": "not_started", "review": None, "notes": []}
                              for n in scripts()})

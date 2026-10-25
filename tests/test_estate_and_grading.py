@@ -124,3 +124,16 @@ def test_generated_estate_is_sound(tmp_path, monkeypatch):
     g = grade(workspace(tmp_path / "auto", auto).root, None)
     traps = json.loads((out / "grading" / "manifest.json").read_text())["traps"]
     assert {r["script"] for r in g["rows"] if r["a"]} == {n for n in s if not traps[n]}
+
+
+@pytest.mark.parametrize("mode", ["crew", "solo"])
+def test_published_runs_still_grade_as_reported(mode, tmp_path):
+    """The committed conversions keep passing on whichever DuckDB this CI job installed (1.5 on Python 3.10, 2.x
+    elsewhere): parity proven on one engine version is not parity on another."""
+    import json
+    src = ROOT / "runs" / "published" / mode
+    ws = tmp_path / mode
+    shutil.copytree(src, ws)
+    report = json.loads((src / "result.json").read_text())["run"]["report"]
+    g = grade(Workspace(ws).root, report)
+    assert g["pass_b"] == g["scripts"] == 9 and g["claims_honest"] == 9

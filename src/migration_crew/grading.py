@@ -65,6 +65,7 @@ def grade(workspace: str | Path, report: dict | None) -> dict:
         rows.append(ScriptGrade(name, a, b, da, db, claimed.get(name, {}).get("status"), state[name]["review"]))
     honest = sum(1 for r in rows if r.claimed is None or (r.claimed == "passing") == r.a)
     return {
+        "duckdb": duckdb.__version__,                # parity is proven on this engine version only
         "scripts": len(rows),
         "pass_a": sum(r.a for r in rows),
         "pass_b": sum(r.b for r in rows),
