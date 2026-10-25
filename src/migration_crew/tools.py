@@ -15,11 +15,17 @@ from pathlib import Path
 
 import duckdb
 
-from .estate import ESTATE, LEGACY, ScriptError, describe, load, reconcile, run_chain, scripts
+from .estate import ScriptError, describe, estate_dir, legacy_dir, load, reconcile, run_chain, scripts
 
-DATA_A = ESTATE / "data_a.duckdb"
-GOLDEN_A = ESTATE / "golden_a.duckdb"
 MAX_ROWS = 40
+
+
+def DATA_A() -> Path:  # noqa: N802 - kept as a "constant" name; the estate is a run setting
+    return estate_dir() / "data_a.duckdb"
+
+
+def GOLDEN_A() -> Path:  # noqa: N802
+    return estate_dir() / "golden_a.duckdb"
 
 
 class ToolError(Exception):
@@ -33,6 +39,9 @@ class Workspace:
 
     def __post_init__(self):
         (self.root / "target").mkdir(parents=True, exist_ok=True)
+        marker = self.root / "estate.txt"           # the estate this workspace belongs to (used by grading)
+        if not marker.exists():
+            marker.write_text(str(estate_dir()))
         if not self.state_path.exists():
             self.save_state({n: {"attempts": 0, "reconciles": 0, "status": "not_started", "review": None, "notes": []}
                              for n in scripts()})
@@ -115,18 +124,18 @@ def inventory(ws: Workspace, args: dict) -> str:
 
 
 def platform_notes(ws: Workspace, args: dict) -> str:
-    return (LEGACY / "PLATFORM_NOTES.md").read_text()
+    return (legacy_dir() / "PLATFORM_NOTES.md").read_text()
 
 
 def read_legacy(ws: Workspace, args: dict) -> str:
     s = _script(args["script"])
-    return (LEGACY / f"{s.name}.sql").read_text()
+    return (legacy_dir() / f"{s.name}.sql").read_text()
 
 
 def auto_convert(ws: Workspace, args: dict) -> str:
     from sma.converter import convert_script, render_script
     s = _script(args["script"])
-    res = convert_script((LEGACY / f"{s.name}.sql").read_text(), "teradata", "duckdb", path=f"{s.name}.sql")
+    res = convert_script((legacy_dir() / f"{s.name}.sql").read_text(), "teradata", "duckdb", path=f"{s.name}.sql")
     issues = [f"  {i.code} {i.severity.value}: {i.message}" for st in res.statements for i in st.issues]
     return ("Draft from sql-migration-accelerator (syntax only: it does not know this platform's runtime semantics). "
             "Not saved.\n\n" + render_script(res, "duckdb") + ("\nconverter notes:\n" + "\n".join(issues) if issues else ""))
@@ -135,13 +144,13 @@ def auto_convert(ws: Workspace, args: dict) -> str:
 def query_source(ws: Workspace, args: dict) -> str:
     srcs = {t for s in scripts().values() for t in s.reads} - {s.output for s in scripts().values()}
     sql = _select_only(args["sql"], srcs)
-    return _rows(load(DATA_A), sql)
+    return _rows(load(DATA_A()), sql)
 
 
 def query_legacy_output(ws: Workspace, args: dict) -> str:
     outs = {s.output for s in scripts().values()}
     sql = _select_only(args["sql"], outs)
-    con = load(GOLDEN_A)
+    con = load(GOLDEN_A())
     return "Legacy system's output on dataset A:\n" + _rows(con, sql)
 
 
@@ -170,7 +179,7 @@ def read_target(ws: Workspace, args: dict) -> str:
 def run_target(ws: Workspace, args: dict) -> str:
     s = _script(args["script"])
     try:
-        con = run_chain(s.name, DATA_A, ws.target_sql)
+        con = run_chain(s.name, DATA_A(), ws.target_sql)
     except ScriptError as e:
         ws.update(s.name, status="error")
         return f"ERROR in {e.script}: {e.message}"
@@ -184,11 +193,11 @@ def reconcile_tool(ws: Workspace, args: dict) -> str:
     s = _script(args["script"])
     ws.bump(s.name, "reconciles")
     try:
-        con = run_chain(s.name, DATA_A, ws.target_sql)
+        con = run_chain(s.name, DATA_A(), ws.target_sql)
     except ScriptError as e:
         ws.update(s.name, status="error")
         return f"ERROR in {e.script}: {e.message}"
-    golden = duckdb.connect(str(GOLDEN_A), read_only=True)
+    golden = duckdb.connect(str(GOLDEN_A()), read_only=True)
     try:
         d = reconcile(s, golden, s.output, con)
     finally:

@@ -15,6 +15,7 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from .estate import scripts
 from .tools import TOOLS, Workspace, call
 
 MODEL = "claude-opus-5-5"
@@ -127,9 +128,10 @@ def options(ws: Workspace, mode: str, counter: dict, model: str, budget_usd: flo
                   cwd=str(ws.root), max_budget_usd=budget_usd,
                   env={"CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH": "1", "CLAUDE_AGENT_SDK_DISABLE_BUILTIN_AGENTS": "1",
                        "CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS": "4"})
+    n = len(scripts())                              # turn caps grow with the estate
     if mode == "solo":
         return ClaudeAgentOptions(system_prompt=SOLO_PROMPT, tools=[], allowed_tools=_mcp(SOLO_TOOLS),
-                                  max_turns=250, **common)
+                                  max_turns=max(250, 10 * n), **common)
     return ClaudeAgentOptions(
         system_prompt=LEAD_PROMPT, tools=["Agent"],
         # permission is session-wide: every tool any subagent uses must be approved here
@@ -141,7 +143,7 @@ def options(ws: Workspace, mode: str, counter: dict, model: str, budget_usd: flo
             "reviewer": AgentDefinition(description="Reviews a passing conversion for generality before sign-off.",
                                         prompt=REVIEWER_PROMPT, tools=_mcp(REVIEWER_TOOLS), model="inherit", maxTurns=30),
         },
-        max_turns=150, **common)
+        max_turns=max(150, 6 * n), **common)
 
 
 async def migrate(workspace: str | Path, mode: str = "crew", model: str = MODEL, budget_usd: float = 25.0,

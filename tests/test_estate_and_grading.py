@@ -98,3 +98,29 @@ def test_workspace_state_tracks_attempts(tmp_path):
     call(ws, "save_target", {"script": "s2_stg_orders", "sql": "CREATE TABLE stg_orders AS SELECT * FROM orders"})
     assert ws.state()["s2_stg_orders"]["attempts"] == 2
     shutil.rmtree(ws.root)
+
+
+def test_generated_estate_is_sound(tmp_path, monkeypatch):
+    """A template-generated estate: the reference passes both datasets, auto-conversion fails every script with a
+    trap and passes every control script, and dependent scripts read earlier outputs."""
+    import json
+
+    from sma.converter import convert_script, render_script
+
+    from migration_crew.estate import legacy_dir
+    from migration_crew.generator import write
+
+    out = tmp_path / "n20"
+    write(out, 20, seed=3)
+    monkeypatch.setenv("MIGRATION_CREW_ESTATE", str(out / "estate"))
+    s = scripts()
+    assert len(s) == 20 and any(x.depends_on for x in s.values())
+    assert not list((out / "estate").rglob("reference")) and not list((out / "estate").rglob("*_b.duckdb"))
+    ref = {n: (out / "grading" / "reference" / f"{n}.sql").read_text() for n in s}
+    g = grade(workspace(tmp_path / "ref", ref).root, None)
+    assert g["pass_a"] == g["pass_b"] == 20
+    auto = {n: render_script(convert_script((legacy_dir() / f"{n}.sql").read_text(), "teradata", "duckdb"), "duckdb")
+            for n in s}
+    g = grade(workspace(tmp_path / "auto", auto).root, None)
+    traps = json.loads((out / "grading" / "manifest.json").read_text())["traps"]
+    assert {r["script"] for r in g["rows"] if r["a"]} == {n for n in s if not traps[n]}
