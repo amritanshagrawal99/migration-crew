@@ -1,0 +1,38 @@
+[build-system]
+requires = ["hatchling>=1.21"]
+build-backend = "hatchling.build"
+
+[project]
+name = "migration-crew"
+version = "0.1.0"
+description = "A multi-agent crew (Claude Agent SDK) that migrates a Teradata ETL estate to DuckDB, reconciling every job against legacy outputs, graded on data it never saw."
+readme = "README.md"
+license = { text = "MIT" }
+authors = [{ name = "Amritansh Agrawal" }]
+requires-python = ">=3.10"
+dependencies = [
+  "claude-agent-sdk>=0.2.174",
+  "duckdb>=1.1",
+  "sqlglot>=30,<31",
+  "sql-migration-accelerator @ git+https://github.com/amritanshagrawal99/sql-migration-accelerator",
+]
+keywords = ["agents", "multi-agent", "claude-agent-sdk", "mcp", "teradata", "migration", "duckdb", "llm-evals"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "ruff>=0.5"]
+
+[project.scripts]
+migration-crew = "migration_crew.cli:main"
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/migration_crew"]
+
+[tool.ruff]
+line-length = 140
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]

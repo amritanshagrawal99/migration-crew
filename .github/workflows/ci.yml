@@ -1,0 +1,24 @@
+name: CI
+
+# Deterministic checks: the benchmark is sound (reference passes both datasets, auto-conversion fails where the traps
+# are, a dataset-A-fitted conversion fails dataset B), the sandbox holds, and the tools are scoped. Live crew runs need
+# Claude credentials and are run with `migration-crew run`; their results are committed under runs/published/.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - run: pip install -e ".[dev]"
+      - run: ruff check src tests estate
+      - run: pytest -q

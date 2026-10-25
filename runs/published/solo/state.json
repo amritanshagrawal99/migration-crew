@@ -1,0 +1,154 @@
+{
+  "s1_stg_customers": {
+    "attempts": 1,
+    "reconciles": 1,
+    "status": "passing",
+    "review": "approved",
+    "notes": [
+      {
+        "kind": "trap",
+        "text": "Session mode: segment comparisons ('gold','silver') are case-insensitive and ignore trailing spaces ('Gold   ', 'SILVER ' match). Emulated as LOWER(RTRIM(a)) = LOWER(RTRIM(b)). Leading spaces still matter (as in Teradata). ZEROIFNULL -> COALESCE(x,0); INDEX -> STRPOS (both return 0 when not found, so SUBSTR returns the whole string)."
+      },
+      {
+        "kind": "review:approved",
+        "text": "Every character comparison uses the session-mode rule (LOWER/RTRIM on both sides). No literals taken from the data."
+      }
+    ]
+  },
+  "s2_stg_orders": {
+    "attempts": 1,
+    "reconciles": 1,
+    "status": "passing",
+    "review": "approved",
+    "notes": [
+      {
+        "kind": "trap",
+        "text": "Session mode: status IN ('shipped','delivered') and channel = 'WEB'/'APP' are case-insensitive and ignore trailing spaces ('SHIPPED ', 'app ', 'Web  '). Emulated with LOWER(RTRIM()) on both sides."
+      },
+      {
+        "kind": "review:approved",
+        "text": "The session-mode rule is applied to both the status IN-list and the channel comparisons. DATE - DATE gives an integer in both platforms."
+      }
+    ]
+  },
+  "s3_customer_order_stats": {
+    "attempts": 1,
+    "reconciles": 1,
+    "status": "passing",
+    "review": "approved",
+    "notes": [
+      {
+        "kind": "trap",
+        "text": "INTEGER/INTEGER truncates toward zero in Teradata, but DuckDB '/' returns DOUBLE. Emulated as sign(a)*sign(b)*(abs(a)//abs(b)). CAST to DECIMAL(14,1): RoundHalfwayMagUp=FALSE means half-to-even rounding, but DuckDB rounds half away from zero. Emulated exactly with FLOOR-based half-even decimal arithmetic."
+      },
+      {
+        "kind": "review:approved",
+        "text": "Integer division truncates toward zero for any signs. The half-even rounding to DECIMAL(14,1) is general and exact. Minor risk: Teradata SUM(INTEGER) overflow behaviour isn't emulated."
+      }
+    ]
+  },
+  "s4_first_fulfilment": {
+    "attempts": 1,
+    "reconciles": 1,
+    "status": "passing",
+    "review": "approved",
+    "notes": [
+      {
+        "kind": "trap",
+        "text": "Teradata sorts NULLs first in ASC order, but DuckDB defaults to NULLS LAST. The ORDER BY in ROW_NUMBER uses explicit NULLS FIRST."
+      },
+      {
+        "kind": "legacy_bug",
+        "text": "Because NULL ship_date sorts first, the 'first order in fulfilment order' is any unshipped order if the customer has one, not the earliest shipped order. So churn_flags.first_order_unshipped really means 'has any unshipped order'. Reproduced as-is."
+      },
+      {
+        "kind": "review:approved",
+        "text": "Explicit NULLS FIRST on every ascending sort key."
+      }
+    ]
+  },
+  "s5_order_lines_enriched": {
+    "attempts": 1,
+    "reconciles": 1,
+    "status": "passing",
+    "review": "approved",
+    "notes": [
+      {
+        "kind": "trap",
+        "text": "order_lines.sku is CHAR(10) with trailing-space padding. The session-mode join ignores trailing spaces and case. Join on LOWER(RTRIM(ol.sku)) = LOWER(RTRIM(p.sku)); otherwise DuckDB drops every line."
+      },
+      {
+        "kind": "review:approved",
+        "text": "The join key uses the session-mode comparison, covering both case and trailing-space padding."
+      }
+    ]
+  },
+  "s6_category_revenue_monthly": {
+    "attempts": 1,
+    "reconciles": 1,
+    "status": "passing",
+    "review": "approved",
+    "notes": [
+      {
+        "kind": "trap",
+        "text": "Session-mode GROUP BY on character columns is case- and trailing-space-insensitive. Grouped by LOWER(RTRIM(category)) and output MIN(category) as the representative spelling."
+      },
+      {
+        "kind": "risk",
+        "text": "If product categories differ only in case or trailing spaces, Teradata picks an arbitrary spelling for each group. The migration uses MIN(category), so the spelling could differ from legacy even though the grouping and totals match. Dataset A has only one spelling per category."
+      },
+      {
+        "kind": "review:approved",
+        "text": "Grouping follows session-mode equality. The representative spelling is MIN(category), which is a documented risk."
+      }
+    ]
+  },
+  "s7_top_customers": {
+    "attempts": 1,
+    "reconciles": 1,
+    "status": "passing",
+    "review": "approved",
+    "notes": [
+      {
+        "kind": "trap",
+        "text": "TOP 10 WITH TIES is emulated with RANK() OVER (ORDER BY order_cnt DESC NULLS LAST) <= 10, which keeps every row tied with the 10th."
+      },
+      {
+        "kind": "review:approved",
+        "text": "RANK() <= 10 matches TOP 10 WITH TIES semantics."
+      }
+    ]
+  },
+  "s8_churn_flags": {
+    "attempts": 1,
+    "reconciles": 1,
+    "status": "passing",
+    "review": "approved",
+    "notes": [
+      {
+        "kind": "review:approved",
+        "text": "No character comparisons, rounding or ordering traps. Date arithmetic is equivalent."
+      }
+    ]
+  },
+  "s9_dim_customer_scd2": {
+    "attempts": 1,
+    "reconciles": 1,
+    "status": "passing",
+    "review": "approved",
+    "notes": [
+      {
+        "kind": "trap",
+        "text": "Session mode: is_current = 'Y' also matches hand-entered 'y', and segment_std <> segment treats 'Gold   '/'gold'/'GOLD' as equal. Both are emulated with LOWER(RTRIM()) in the chg build and in the UPDATE filter. A Teradata volatile table becomes a DuckDB TEMP table, and UPDATE ... FROM is rewritten in DuckDB order (SET before FROM)."
+      },
+      {
+        "kind": "legacy_bug",
+        "text": "If a customer has more than one current row in dim_customer_prev (e.g. both 'Y' and 'y'), chg gets duplicate rows and the job inserts duplicate new versions with the same (cust_id, start_date). Dataset A doesn't have this case. The SQL is reproduced faithfully. Also, the closed and reopened versions keep the hand-entered spellings ('y') on untouched rows."
+      },
+      {
+        "kind": "review:approved",
+        "text": "The session-mode rule is applied to is_current and segment in both the chg build and the UPDATE. The structure mirrors the legacy job, including its duplicate-chg behaviour (logged as legacy_bug)."
+      }
+    ]
+  }
+}

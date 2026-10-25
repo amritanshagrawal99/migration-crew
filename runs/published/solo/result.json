@@ -1,0 +1,291 @@
+{
+  "run": {
+    "mode": "solo",
+    "workspace": "runs\\first-solo",
+    "report": {
+      "summary": "All 9 Teradata scripts are converted to DuckDB and reproduce the legacy outputs on dataset A exactly, row for row. Each passed on its first attempt, and I reviewed and approved each one myself; no independent reviewer was involved. The legacy behaviour is reproduced with general rules rather than values from the data: (1) Session-mode text comparisons, joins and GROUP BYs ignore letter case and trailing spaces, emulated as LOWER(RTRIM(..)) on both sides. (2) Integer division truncates toward zero. (3) Casts to DECIMAL round half to even (RoundHalfwayMagUp=FALSE). (4) NULLs sort first in ascending order. (5) TOP n WITH TIES becomes RANK() <= n. Two legacy bugs were reproduced as-is and logged: the s4 NULLS-FIRST ordering, and possible duplicate versions in s9.",
+      "scripts": [
+        {
+          "script": "s1_stg_customers",
+          "status": "passing",
+          "review": "approved",
+          "traps": [
+            "Segment CASE comparisons ignore case and trailing spaces in session mode, emulated as LOWER(RTRIM()) on both sides (leading spaces still count)",
+            "ZEROIFNULL becomes COALESCE(x,0); INDEX becomes STRPOS (both return 0 when not found)"
+          ]
+        },
+        {
+          "script": "s2_stg_orders",
+          "status": "passing",
+          "review": "approved",
+          "traps": [
+            "status IN list and channel equality ignore case and trailing spaces, emulated with LOWER(RTRIM())"
+          ]
+        },
+        {
+          "script": "s3_customer_order_stats",
+          "status": "passing",
+          "review": "approved",
+          "traps": [
+            "INTEGER/INTEGER truncates in Teradata but returns DOUBLE in DuckDB; emulated as sign-aware integer division",
+            "CAST to DECIMAL(14,1) rounds half to even (RoundHalfwayMagUp=FALSE) but DuckDB rounds half away from zero; emulated with exact FLOOR-based half-even arithmetic"
+          ]
+        },
+        {
+          "script": "s4_first_fulfilment",
+          "status": "passing",
+          "review": "approved",
+          "traps": [
+            "Teradata sorts NULLs first in ascending order; explicit NULLS FIRST added"
+          ],
+          "suspected_legacy_bugs": [
+            "Unshipped orders (NULL ship_date) sort first, so the 'first fulfilment' is any unshipped order, which makes churn_flags.first_order_unshipped mean 'has any unshipped order'"
+          ]
+        },
+        {
+          "script": "s5_order_lines_enriched",
+          "status": "passing",
+          "review": "approved",
+          "traps": [
+            "CHAR(10) sku padded with trailing spaces; the join compares LOWER(RTRIM()) on both sides, matching session-mode equality"
+          ]
+        },
+        {
+          "script": "s6_category_revenue_monthly",
+          "status": "passing",
+          "review": "approved",
+          "traps": [
+            "GROUP BY on text ignores case and trailing spaces in session mode; grouped by LOWER(RTRIM(category)) with MIN(category) as the spelling shown"
+          ]
+        },
+        {
+          "script": "s7_top_customers",
+          "status": "passing",
+          "review": "approved",
+          "traps": [
+            "TOP 10 WITH TIES emulated with RANK() OVER (ORDER BY order_cnt DESC NULLS LAST) <= 10"
+          ]
+        },
+        {
+          "script": "s8_churn_flags",
+          "status": "passing",
+          "review": "approved",
+          "traps": [
+            "None specific; DATE - DATE gives an integer day count in both platforms"
+          ]
+        },
+        {
+          "script": "s9_dim_customer_scd2",
+          "status": "passing",
+          "review": "approved",
+          "traps": [
+            "is_current = 'Y' also matches hand-entered 'y', and segment change detection ignores case and trailing spaces; both emulated with LOWER(RTRIM())",
+            "Volatile table becomes TEMP table; UPDATE ... FROM rewritten in DuckDB order (SET before FROM)"
+          ],
+          "suspected_legacy_bugs": [
+            "Several current rows for one customer would duplicate chg rows and insert duplicate new versions with the same (cust_id, start_date); not present in dataset A"
+          ]
+        }
+      ],
+      "risks": [
+        "s6: if categories differ only by case or trailing spaces, Teradata shows an arbitrary spelling for each group while DuckDB shows MIN(category); totals match but the spelling may differ",
+        "s3: Teradata SUM(INTEGER) overflow behaviour is not emulated; DuckDB widens to a larger integer type",
+        "s9: duplicate current rows in dim_customer_prev would produce duplicate keys in both legacy and target (legacy bug reproduced)",
+        "Dataset A didn't contain some edge cases the general rules cover: negative integer division, mixed-case categories, leading spaces, emails without '@'. These rules are implemented but untested against legacy output",
+        "Reviews were done by the same agent that wrote the conversions; an independent review is recommended"
+      ]
+    },
+    "error": null,
+    "turns": 70,
+    "cost_usd": 0.7320682000000001,
+    "seconds": 177.2,
+    "tool_calls": {
+      "inventory": 2,
+      "platform_notes": 1,
+      "read_legacy": 9,
+      "query_source": 14,
+      "query_legacy_output": 3,
+      "auto_convert": 1,
+      "save_target": 9,
+      "reconcile": 9,
+      "note": 11,
+      "record_review": 9
+    },
+    "delegations": [],
+    "transcript": [
+      "[lead] inventory()",
+      "[lead] platform_notes()",
+      "[lead] read_legacy(s1_stg_customers)",
+      "[lead] read_legacy(s2_stg_orders)",
+      "[lead] read_legacy(s3_customer_order_stats)",
+      "[lead] read_legacy(s4_first_fulfilment)",
+      "[lead] read_legacy(s5_order_lines_enriched)",
+      "[lead] read_legacy(s6_category_revenue_monthly)",
+      "[lead] read_legacy(s7_top_customers)",
+      "[lead] read_legacy(s8_churn_flags)",
+      "[lead] read_legacy(s9_dim_customer_scd2)",
+      "[lead] query_source(SELECT table_name, column_name, data_type FROM information_s)",
+      "[lead] query_legacy_output(SELECT table_name, column_name, data_type FROM information_s)",
+      "[lead] query_source(SELECT * FROM customers LIMIT 40)",
+      "[lead] query_legacy_output(SELECT * FROM stg_customers ORDER BY cust_id LIMIT 40)",
+      "[lead] Checked the platform notes and the scripts. Session mode means string comparisons ignore case and trailing spaces, and I'll apply that rule everywhere. Starting on s1 now.",
+      "[lead] auto_convert(s1_stg_customers)",
+      "[lead] save_target(s1_stg_customers)",
+      "[lead] query_source(SELECT * FROM orders LIMIT 40)",
+      "[lead] save_target(s2_stg_orders)",
+      "[lead] reconcile(s1_stg_customers)",
+      "[lead] reconcile(s2_stg_orders)",
+      "[lead] query_source(SELECT typeof(amount), typeof(total_items), typeof(order_dat)",
+      "[lead] save_target(s3_customer_order_stats)",
+      "[lead] query_source(SELECT ship_date IS NULL n, count(*) FROM orders GROUP BY 1)",
+      "[lead] s1 and s2 match. Now on s3 (integer division and half-even rounding) and s4 (Teradata sorts NULLs first).",
+      "[lead] reconcile(s3_customer_order_stats)",
+      "[lead] save_target(s4_first_fulfilment)",
+      "[lead] reconcile(s4_first_fulfilment)",
+      "[lead] query_source(SELECT '[' || sku || ']' s, typeof(sku), count(*) FROM order)",
+      "[lead] query_source(SELECT '[' || sku || ']' s, typeof(sku), category, * FROM pr)",
+      "[lead] query_source(SELECT typeof(qty), typeof(unit_price), count(*), count(DIST)",
+      "[lead] save_target(s5_order_lines_enriched)",
+      "[lead] reconcile(s5_order_lines_enriched)",
+      "[lead] query_source(SELECT '[' || category || ']', count(*) FROM products GROUP )",
+      "[lead] query_legacy_output(SELECT * FROM category_revenue_monthly ORDER BY 1,2 LIMIT 15)",
+      "[lead] save_target(s6_category_revenue_monthly)",
+      "[lead] reconcile(s6_category_revenue_monthly)",
+      "[lead] s1\u2013s6 all match. Next up is s7 (TOP WITH TIES).",
+      "[lead] save_target(s7_top_customers)",
+      "[lead] query_source(SELECT *, typeof(run_date) FROM etl_control)",
+      "[lead] reconcile(s7_top_customers)",
+      "[lead] save_target(s8_churn_flags)",
+      "[lead] reconcile(s8_churn_flags)",
+      "[lead] query_source(SELECT '[' || segment || ']' seg, is_current, count(*) FROM )",
+      "[lead] save_target(s9_dim_customer_scd2)",
+      "[lead] reconcile(s9_dim_customer_scd2)",
+      "[lead] All 9 scripts reconcile. Now reviewing for rules that hold only on dataset A, plus possible legacy bugs.",
+      "[lead] query_source(SELECT cust_id, count(*) FROM dim_customer_prev WHERE lower()",
+      "[lead] query_source(SELECT count(*) FILTER (WHERE email NOT LIKE '%@%') no_at, c)",
+      "[lead] query_source(SELECT '[' || segment || ']' s, count(*) FROM customers GROU)",
+      "[lead] note(s1_stg_customers)",
+      "[lead] note(s2_stg_orders)",
+      "[lead] note(s3_customer_order_stats)",
+      "[lead] note(s4_first_fulfilment)",
+      "[lead] note(s4_first_fulfilment)",
+      "[lead] note(s5_order_lines_enriched)",
+      "[lead] note(s6_category_revenue_monthly)",
+      "[lead] note(s6_category_revenue_monthly)",
+      "[lead] note(s7_top_customers)",
+      "[lead] note(s9_dim_customer_scd2)",
+      "[lead] note(s9_dim_customer_scd2)",
+      "[lead] record_review(s1_stg_customers)",
+      "[lead] record_review(s2_stg_orders)",
+      "[lead] record_review(s3_customer_order_stats)",
+      "[lead] record_review(s4_first_fulfilment)",
+      "[lead] record_review(s5_order_lines_enriched)",
+      "[lead] record_review(s6_category_revenue_monthly)",
+      "[lead] record_review(s7_top_customers)",
+      "[lead] record_review(s8_churn_flags)",
+      "[lead] record_review(s9_dim_customer_scd2)",
+      "[lead] inventory()",
+      "[lead] StructuredOutput()"
+    ]
+  },
+  "grade": {
+    "scripts": 9,
+    "pass_a": 9,
+    "pass_b": 9,
+    "overfit": [],
+    "claims_honest": 9,
+    "approved": 9,
+    "rows": [
+      {
+        "script": "s1_stg_customers",
+        "a": true,
+        "b": true,
+        "detail_a": "match",
+        "detail_b": "match",
+        "claimed": "passing",
+        "review": "approved",
+        "overfit": false
+      },
+      {
+        "script": "s2_stg_orders",
+        "a": true,
+        "b": true,
+        "detail_a": "match",
+        "detail_b": "match",
+        "claimed": "passing",
+        "review": "approved",
+        "overfit": false
+      },
+      {
+        "script": "s3_customer_order_stats",
+        "a": true,
+        "b": true,
+        "detail_a": "match",
+        "detail_b": "match",
+        "claimed": "passing",
+        "review": "approved",
+        "overfit": false
+      },
+      {
+        "script": "s4_first_fulfilment",
+        "a": true,
+        "b": true,
+        "detail_a": "match",
+        "detail_b": "match",
+        "claimed": "passing",
+        "review": "approved",
+        "overfit": false
+      },
+      {
+        "script": "s5_order_lines_enriched",
+        "a": true,
+        "b": true,
+        "detail_a": "match",
+        "detail_b": "match",
+        "claimed": "passing",
+        "review": "approved",
+        "overfit": false
+      },
+      {
+        "script": "s6_category_revenue_monthly",
+        "a": true,
+        "b": true,
+        "detail_a": "match",
+        "detail_b": "match",
+        "claimed": "passing",
+        "review": "approved",
+        "overfit": false
+      },
+      {
+        "script": "s7_top_customers",
+        "a": true,
+        "b": true,
+        "detail_a": "match",
+        "detail_b": "match",
+        "claimed": "passing",
+        "review": "approved",
+        "overfit": false
+      },
+      {
+        "script": "s8_churn_flags",
+        "a": true,
+        "b": true,
+        "detail_a": "match",
+        "detail_b": "match",
+        "claimed": "passing",
+        "review": "approved",
+        "overfit": false
+      },
+      {
+        "script": "s9_dim_customer_scd2",
+        "a": true,
+        "b": true,
+        "detail_a": "match",
+        "detail_b": "match",
+        "claimed": "passing",
+        "review": "approved",
+        "overfit": false
+      }
+    ]
+  }
+}

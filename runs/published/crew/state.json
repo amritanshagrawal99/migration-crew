@@ -1,0 +1,222 @@
+{
+  "s1_stg_customers": {
+    "attempts": 1,
+    "reconciles": 2,
+    "status": "passing",
+    "review": "approved",
+    "notes": [
+      {
+        "kind": "trap",
+        "text": "Session-mode NOT CASESPECIFIC comparison with trailing spaces ignored: CASE WHEN segment = 'gold'/'silver' matches 'Gold   ', 'SILVER ', 'gold ', etc. in Teradata. In DuckDB I compare UPPER(RTRIM(segment,' ')) against UPPER(RTRIM(literal,' ')). Without this, many gold/silver rows would fall through to STANDARD."
+      },
+      {
+        "kind": "trap",
+        "text": "ZEROIFNULL(credit_limit) is rewritten as COALESCE(credit_limit, 0), and the column type is kept. INDEX(email,'@') becomes STRPOS. Both return 0 when '@' is missing, so SUBSTR(email, 1) returns the whole email, the same as legacy. The search runs on UPPER(email) so the INDEX stays case-insensitive as a general rule. TRIM is limited to ' ' to match Teradata pad-character trimming."
+      },
+      {
+        "kind": "risk",
+        "text": "full_name uses ||, which gives NULL in Teradata and DuckDB alike when first_name or last_name is NULL. That is parity, but dataset A has no NULL names, so this path is untested. If email has no '@', email_domain becomes the whole email, which is legacy behaviour. Segment values other than gold/silver ('Std', '', NULL, 'standard') all map to STANDARD."
+      },
+      {
+        "kind": "review:approved",
+        "text": "Approved. The conversion contains no hard-coded data values or keys. Literals 'gold'/'silver'/'GOLD'/'SILVER'/'STANDARD' come straight from the legacy CASE. The segment comparisons follow Teradata session-mode rules on both sides: UPPER plus RTRIM of spaces only. Leading spaces still count, as they do in Teradata. TRIM(x, ' ') removes only spaces from both ends, like Teradata TRIM. COALESCE(credit_limit, 0) matches ZEROIFNULL and keeps the column type. Email handling: when there is no '@', STRPOS returns 0, so SUBSTRING starts at 1 and returns the whole email, which matches Teradata INDEX=0 then SUBSTR(email, 1). NULL email gives NULL on both sides. UPPER(email) inside STRPOS has no effect for '@' but does no harm. A NULL first_name or last_name makes full_name NULL on both platforms. There is no rounding, division or ordering dependency. Source data has varied case and padding in segment ('gold ', 'Gold   ', 'SILVER ', 'Silver', NULL, ''), and the generic rule handles all of it."
+      }
+    ]
+  },
+  "s2_stg_orders": {
+    "attempts": 1,
+    "reconciles": 2,
+    "status": "passing",
+    "review": "approved",
+    "notes": [
+      {
+        "kind": "trap",
+        "text": "Session-mode NOT CASESPECIFIC + trailing-space-insensitive comparisons: status IN ('shipped','delivered') and channel = 'WEB'/'APP' are normalised as upper(rtrim(col,' ')) vs upper(literal). Source has 'SHIPPED ', 'Shipped', 'Delivered', 'Web  ', 'app ' etc.; a plain DuckDB comparison would misclassify them. Output values are literals so no original-value preservation issue."
+      },
+      {
+        "kind": "trap",
+        "text": "DATE - DATE: Teradata returns integer day count; DuckDB date subtraction also returns days (BIGINT) - cast to INTEGER for type parity. NULL ship_date yields NULL lag in both."
+      },
+      {
+        "kind": "legacy_bug",
+        "text": "channel_std ELSE branch maps every non-WEB/APP channel (including 'kiosk' and NULL) to 'store'. Reproduced as-is; kiosk orders are reported as store."
+      },
+      {
+        "kind": "review:approved",
+        "text": "Matches the legacy semantics as general rules, with no values taken from the data. Every text comparison in the script (the status IN list and both channel CASE branches) is normalised the same way, upper(rtrim(x,' ')) against upper(literal), so case and trailing spaces are ignored as they are in Teradata session mode. Only the literals that appear in the legacy SQL are used. rtrim removes only spaces, which matches Teradata's pad-space handling (tabs are not ignored in Teradata either). NULL status gives 0 and NULL or unmatched channel gives 'store', the same as legacy ELSE behaviour. ship_date - order_date on DATE columns gives a day count, and the INTEGER cast matches Teradata's DATE-DATE result; NULL ship_date passes through as NULL. The output strings 'web'/'app'/'store' are the legacy literals. No rounding, division, ordering or grouping is involved. Optional, not required: a value of exactly '' would be handled the same way on both platforms, so no change is needed."
+      }
+    ]
+  },
+  "s3_customer_order_stats": {
+    "attempts": 2,
+    "reconciles": 3,
+    "status": "passing",
+    "review": "approved",
+    "notes": [
+      {
+        "kind": "trap",
+        "text": "CAST(SUM(amount) AS DECIMAL(14,1)): Teradata (RoundHalfwayMagUp=FALSE) rounds halves to even; DuckDB CAST rounds away from zero. Implemented explicit half-even on the exact scaled integer (no floats). Dataset A has 30 customers with a .x5 sum, so this case is exercised."
+      },
+      {
+        "kind": "trap",
+        "text": "CAST(SUM(total_items) AS INTEGER) / CAST(COUNT(*) AS INTEGER): Teradata integer division truncates toward zero; DuckDB '/' returns DOUBLE. Implemented as exact integer division truncating toward zero (sign handled explicitly) and cast to BIGINT to match the legacy column type."
+      },
+      {
+        "kind": "legacy_bug",
+        "text": "avg_items_per_order uses integer division, so the average is truncated (e.g. 7 items / 2 orders = 3, not 3.5). It affects 142 of 266 customers in dataset A. Reproduced as-is for parity."
+      },
+      {
+        "kind": "review:approved",
+        "text": "Approved. Checked against the legacy SQL and with literal edge-case probes run in DuckDB.\n- Text semantics: none apply. cust_id is INTEGER, and this script makes no string comparisons. The case/trailing-space handling for status and channel happens upstream in s2_stg_orders.\n- Integer division (avg_items_per_order): truncation toward zero is done on absolute values with the sign added back. Tested -7/2=-3, 7/2=3, -6/3=-2, 0/4=0, -1/5=0, and NULL sum gives NULL. All correct. COUNT(*) is always at least 1, so division by zero cannot happen. If it did, DuckDB '//' raises an error, as Teradata does (2618).\n- Half-even CAST to DECIMAL(14,1): exact HUGEINT arithmetic with no floats, and symmetric for negatives. Tested 0.05->0.0, 0.15->0.2, 0.25->0.2, -0.25->-0.2, -0.35->-0.4, -0.05->0.0, NULL->NULL, and 13-digit values such as 123456789012.55->123456789012.6 and -9999999999999.85->-9999999999999.8. Values that overflow DECIMAL(14,1) raise a conversion error, the same as Teradata (2616).\n- Output types match the legacy output: avg BIGINT, lifetime_value DECIMAL(38,2), lifetime_value_1dp DECIMAL(14,1).\n- No values or keys from the data are hard-coded. The only fixed constant is the scale f"
+      },
+      {
+        "kind": "risk",
+        "text": "The half-even rounding for lifetime_value_1dp scales by 100 because it assumes stg_orders.amount is DECIMAL(p,2) (currently orders.amount DECIMAL(12,2)). If the source scale changes to 3 or more, the HUGEINT cast would round before the half-even step (double rounding), and lifetime_value_1dp would silently differ from legacy. Re-check this if the orders schema changes."
+      }
+    ]
+  },
+  "s4_first_fulfilment": {
+    "attempts": 1,
+    "reconciles": 2,
+    "status": "passing",
+    "review": "approved",
+    "notes": [
+      {
+        "kind": "trap",
+        "text": "NULL ordering: Teradata puts NULLs first in an ascending ORDER BY, but DuckDB puts them last. 165 of 968 orders have a NULL ship_date. In the legacy output, every one of the 117 customers with a NULL-ship_date order gets that order as the 'first fulfilment'. The window now uses ORDER BY ship_date ASC NULLS FIRST, order_id ASC NULLS FIRST. No other tie-breaker is needed because order_id is unique, so the order is total and the result is deterministic."
+      },
+      {
+        "kind": "legacy_bug",
+        "text": "The job is meant to find the 'first order per customer in fulfilment order', but it does not filter out unshipped orders (NULL ship_date). Because Teradata sorts NULLs first, any customer with an unshipped order gets that order as their first fulfilment, with a NULL ship_date (117 of 266 rows on dataset A). The more likely intent was to pick the earliest shipped order. The migration reproduces the legacy behaviour."
+      },
+      {
+        "kind": "review:approved",
+        "text": "Matches the legacy logic and should give the same result on other data. (1) No hard-coded values, keys or spellings. (2) The ORDER BY has the same keys and directions as the legacy (ship_date ASC, order_id ASC). Both are ASC, so NULLS FIRST is correct on both keys and matches Teradata's NULL-low ordering. There is no DESC key, so no direction needs NULLS LAST. (3) The ordering is deterministic. order_id is the declared KEY of stg_orders (s2), and in dataset A it is INTEGER, non-null and unique (968 rows, 968 distinct), so (ship_date, order_id) totally orders each partition. No extra tie-breaker is needed and none was added beyond what the legacy has. (4) The case and trailing-space rule does not apply here. cust_id and order_id are INTEGER and ship_date is DATE, and s2 passes them through unchanged, so PARTITION BY and ORDER BY involve no text comparisons. Rounding and integer division do not apply either. Optional: drop the 'NULLS FIRST' on order_id or keep it. It does no harm because order_id is non-null. Do not change any semantics."
+      },
+      {
+        "kind": "legacy_bug",
+        "text": "Teradata sorts NULLs first in ascending order, so a customer with any unshipped order (ship_date NULL, 165 of 968 orders in dataset A) gets that unshipped order as their 'first fulfilment' row with ship_date NULL, rather than their earliest shipped order. This is probably not what the job means, but the conversion reproduces it on purpose (NULLS FIRST) for parity. The downstream s8_churn_flags uses this table and inherits the behaviour."
+      }
+    ]
+  },
+  "s5_order_lines_enriched": {
+    "attempts": 1,
+    "reconciles": 2,
+    "status": "passing",
+    "review": "approved",
+    "notes": [
+      {
+        "kind": "trap",
+        "text": "Join ol.sku = p.sku: order_lines.sku is CHAR(10) with trailing-space padding and the catalogue may differ in case. In Teradata session mode the comparison is NOT CASESPECIFIC and ignores trailing spaces, but a plain DuckDB '=' would match none of the padded rows. Both sides are normalised with upper(rtrim(...)) in the join. The output column sku is still p.sku as stored, which matches legacy."
+      },
+      {
+        "kind": "decision",
+        "text": "line_amount = qty (INTEGER) * unit_price (DECIMAL(12,2)) is exact decimal multiplication with scale 2, so no rounding or division traps apply. The MULTISET table and PRIMARY INDEX were dropped. The INNER JOIN drops order lines whose sku has no match in the catalogue, the same as legacy. Products had no duplicate normalised sku on dataset A; if duplicates appear, the join would fan out in both systems the same way."
+      },
+      {
+        "kind": "review:approved",
+        "text": "Faithful general conversion. The only text comparison (the join ol.sku = p.sku) is normalised on both sides with upper(rtrim(...)), which matches Teradata session-mode NOT CASESPECIFIC comparison with trailing pad spaces ignored. Leading spaces are correctly left alone, since rtrim only strips trailing spaces. Nothing is hard-coded from the data. Output uses p.sku as stored, the same as legacy. line_amount = INTEGER * DECIMAL(12,2) is exact (no rounding), so half-even rounding does not apply. Optional hardening: if products could ever hold two SKUs that differ only in case or trailing spaces, both legacy and target would fan out the same way, so parity still holds."
+      }
+    ]
+  },
+  "s6_category_revenue_monthly": {
+    "attempts": 1,
+    "reconciles": 2,
+    "status": "passing",
+    "review": "approved",
+    "notes": [
+      {
+        "kind": "trap",
+        "text": "GROUP BY category runs in Teradata session mode (NOT CASESPECIFIC, trailing spaces ignored), so categories that differ only in case or trailing spaces collapse into one group. DuckDB groups them separately. The migrated job groups on upper(rtrim(category,' ')) and outputs MIN(category) over the original spellings. Dataset A's product categories are already clean lowercase, so this path is not exercised; MIN is a general, deterministic choice that matches the legacy spellings seen."
+      },
+      {
+        "kind": "trap",
+        "text": "Types are pinned to match the legacy output: yyyymm is EXTRACT(YEAR)*100+EXTRACT(MONTH) cast to BIGINT (an integer, not a string), and revenue is SUM(DECIMAL(12,2)) cast to DECIMAL(38,2). The join is on integer order_id and needs no text normalisation. No ROUND or division is involved, so half-even rounding does not apply here."
+      },
+      {
+        "kind": "risk",
+        "text": "When categories differ only in case or spacing, Teradata does not document which original spelling it outputs. MIN over the originals is an assumption that dataset A cannot test, because its categories are uniform. Re-check on data that has mixed-case categories."
+      },
+      {
+        "kind": "risk",
+        "text": "Legacy GROUP BY e.category runs in Teradata session mode (NOT CASESPECIFIC, trailing blanks ignored), so variants such as 'books', 'Books', 'books  ' fold into one group. The target groups on upper(rtrim(category, ' ')), which is correct. For the output spelling it uses MIN(category). Teradata does not define which member's spelling it returns for a folded group; in practice it is whichever row it reads first, and that depends on AMP and row distribution. MIN uses codepoint order, so uppercase beats lowercase and an unpadded value beats a padded one. That makes it a deterministic stand-in, not"
+      },
+      {
+        "kind": "review:approved",
+        "text": "Approved. Checked against the legacy SQL, the upstream conversions of s2 and s5, the source data and the legacy output types.\n- Grouping: the GROUP BY on upper(rtrim(e.category, ' ')) correctly follows Teradata session-mode NOT CASESPECIFIC and blank-insensitive grouping. NULL categories still form a single group with a NULL spelling, the same as legacy.\n- Spelling: MIN(category) is a sound deterministic rule, but it is not guaranteed to be the spelling Teradata returns, because Teradata's choice for a folded group is not defined. Dataset A never tests it: products has only 5 clean lowercase categories. I recorded this as a risk note. No code change is needed. Keep the comment in the SQL that explains the MIN choice.\n- Text filters: the only filter is o.is_shipped = 1, an integer. The status text comparison happens upstream in s2, which already normalises both sides with upper(rtrim(status)) IN (upper('shipped'), upper('delivered')). The category values come from s5, whose join is also normalised on both sides (upper(rtrim(sku))). No text comparison in this script is left un-normalised.\n- Rounding and division: there is no ROUND, no CAST to a smaller decimal scale and no division, "
+      }
+    ]
+  },
+  "s7_top_customers": {
+    "attempts": 1,
+    "reconciles": 2,
+    "status": "passing",
+    "review": "approved",
+    "notes": [
+      {
+        "kind": "trap",
+        "text": "TOP 10 WITH TIES keeps every row tied with the 10th row (dataset A: 28 rows, all with order_cnt=8). Implemented as RANK() OVER (ORDER BY order_cnt DESC NULLS LAST) <= 10, not ROW_NUMBER or a plain LIMIT 10. The auto-converter emitted 'LIMIT 10 WITH TIES'; I replaced it with the portable RANK form. NULLS LAST is explicit to match Teradata's DESC ordering, even though order_cnt (COUNT(*)) can't be NULL."
+      },
+      {
+        "kind": "risk",
+        "text": "The header says \"the ten most frequent customers\", but WITH TIES can return far more than 10 rows (28 on dataset A). This matches the legacy output, so it was kept. Consumers should not assume 10 rows. The join is on the INTEGER cust_id, so the text-comparison rules don't apply to it."
+      },
+      {
+        "kind": "review:approved",
+        "text": "Approved. TOP 10 WITH TIES ORDER BY s.order_cnt DESC is correctly converted to RANK() OVER (ORDER BY s.order_cnt DESC NULLS LAST) <= 10. There is only one sort key. RANK puts all tied rows, including NULLs, in the same peer group, the same way WITH TIES does. NULLS LAST matches Teradata's DESC ordering, although order_cnt comes from COUNT(*) in s3 and so can never be NULL. The join is on cust_id, which is INTEGER in the source customers table and stays INTEGER through s1 and s3, so case and trailing-space rules don't apply. There are no text filters, CASE expressions, rounding or division in this script, and no values from the data are hard-coded. full_name and segment_std are passed through unchanged from stg_customers. Dataset A checks the tie logic: the legacy output has 28 rows, all tied at order_cnt = 8, and the conversion reproduces them. No changes needed."
+      }
+    ]
+  },
+  "s8_churn_flags": {
+    "attempts": 1,
+    "reconciles": 2,
+    "status": "passing",
+    "review": "approved",
+    "notes": [
+      {
+        "kind": "trap",
+        "text": "Teradata DATE - DATE returns INTEGER days; DuckDB returns BIGINT. Cast days_since_last_order to INTEGER. A NULL difference (NULL last_order_date or run_date) makes both WHEN tests unknown, so it falls to ELSE 'LOW', which is the same in both engines. Run date is read from etl_control through a CROSS JOIN, as the legacy job does. If etl_control has more than one row, the output fans out in both engines. Joins are on INTEGER cust_id, so the case/trailing-space text rules don't apply."
+      },
+      {
+        "kind": "legacy_bug",
+        "text": "first_order_unshipped comes from first_fulfilment.ship_date IS NULL. Upstream, first_fulfilment sorts ship_date ascending with NULLs first, so any customer with any unshipped order gets a NULL ship_date. The flag therefore means 'has any unshipped order', not 'first order unshipped'. Also, a customer with a NULL last_order_date would be classed as churn_risk 'LOW'. Both behaviours are reproduced as-is."
+      },
+      {
+        "kind": "review:approved",
+        "text": "This is a faithful clause-by-clause translation, and the logic holds on any data, not just dataset A. Checks: (1) No values are hard-coded. run_date comes from etl_control through the CROSS JOIN, as in the legacy SQL. The 90 and 30 thresholds and the HIGH/MEDIUM/LOW labels come from the legacy SQL, not from the data. (2) There are no text comparisons. All joins are on cust_id, which is INTEGER in source customers/orders and is passed through unchanged by s1/s3/s4. segment_std is only passed through, not tested, so case and trailing-space rules do not apply here. (3) Date arithmetic: orders.order_date and etl_control.run_date are DATE, so DATE - DATE gives integer days in DuckDB. The CAST to INTEGER matches Teradata's INTEGER result type. The CASE tests use the uncast difference, which gives the same result. (4) NULLs: a NULL last_order_date or run_date makes both WHEN tests unknown, so the row falls to ELSE 'LOW', the same as in Teradata. ship_date IS NULL is checked directly. (5) There is no rounding, division or ordering, so neither the half-even rule nor row order affects the result. (6) If etl_control ever has more than one row, both platforms multiply rows the same way, so par"
+      },
+      {
+        "kind": "risk",
+        "text": "Both legacy and target cross join etl_control without restricting it to one row. If etl_control ever holds more than one run_date, every customer is repeated once per row and the cust_id key is no longer unique. The migrated job reproduces this exactly, as parity requires. Upstream must keep etl_control to a single row."
+      }
+    ]
+  },
+  "s9_dim_customer_scd2": {
+    "attempts": 1,
+    "reconciles": 2,
+    "status": "passing",
+    "review": "approved",
+    "notes": [
+      {
+        "kind": "trap",
+        "text": "Session-mode text comparison: change detection s.segment_std <> d.segment must compare UPPER(RTRIM(x,' ')) on both sides. dim_customer_prev.segment is hand-entered with mixed case and trailing spaces ('gold ', 'Gold   ', 'SILVER '), so a plain DuckDB <> would flag unchanged customers as changed. A NULL segment still produces UNKNOWN and is excluded, as in legacy."
+      },
+      {
+        "kind": "trap",
+        "text": "is_current = 'Y' in the chg join and in the UPDATE filter is case-insensitive in Teradata. dim_customer_prev has current rows flagged lowercase 'y', and they must be treated as current. The original 'y' value is kept on rows the job does not touch. Date arithmetic run_date - 1 maps to DuckDB DATE - INTEGER, which gives a DATE, and the high date is DATE '9999-12-31'. The run date is read from etl_control."
+      },
+      {
+        "kind": "risk",
+        "text": "Reproduced as legacy writes it, possibly a bug. (a) A customer in stg whose dim_customer_prev rows are all closed (no current row) is neither in chg nor treated as new, so no current version is opened for it. (b) A changed customer with several current rows in prev gets several chg rows, so duplicate new versions with the same (cust_id, start_date) are inserted. (c) etl_control is cross-joined; more than one row would multiply the inserts. (d) Rows where is_current is lowercase 'y' are left as 'y' and are not normalised. None of these is exercised in a way that breaks parity on dataset A."
+      },
+      {
+        "kind": "review:approved",
+        "text": "Matches the legacy SQL statement for statement and applies the rules generally. (1) Every text comparison is normalised on both sides with UPPER(RTRIM(x,' ')): the segment change test, is_current='Y' in the chg join, and is_current='Y' in the UPDATE WHERE. The is_current values in dim_customer_prev mix 'Y' and 'y', and segment values carry mixed case and trailing spaces, so this matters. The only other comparisons are on cust_id, which is an integer. (2) NULLs: if segment_std or segment is NULL, <> evaluates to unknown and the row is left out of chg, the same as in Teradata. NOT EXISTS is unchanged. (3) Dates: run_date comes from etl_control in all three places (end_date = run_date - 1, start_date = run_date). DATE '9999-12-31' is the legacy literal, not a value copied from the data. No dates, keys or spellings are hard-coded. (4) Order: chg is built from dim_customer_prev before the UPDATE, as in legacy. The UPDATE closes every current row for a changed cust_id. Inserted rows keep the raw segment_std and is_current='Y', as legacy does. If a cust_id matches more than once in UPDATE...FROM, every match writes the same values, so the result is deterministic. (5) Neither rounding nor "
+      },
+      {
+        "kind": "legacy_bug",
+        "text": "Legacy behaviour kept on purpose for parity. (a) Change detection uses session-mode comparison, so a change that only affects case or trailing spaces (e.g. 'gold ' -> 'Gold') does not open a new version, and the hand-entered spelling in the current row stays as it is. (b) A NULL segment on either side never counts as a change. (c) The new-customer insert does not deduplicate stg_customers and does not filter on is_current: a cust_id that appears in dim_customer_prev only with closed rows is never reopened. (d) If etl_control has more than one row, rows are duplicated or the update is ambiguous"
+      }
+    ]
+  }
+}
